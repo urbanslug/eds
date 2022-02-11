@@ -67,6 +67,7 @@ fn is_valid_index<T>(idx: usize, vec: &Vec<T>) -> bool {
 type EdgesPair = (HashSet<u32>, HashSet<u32>);
 
 impl EDT {
+    #[allow(unused_assignments)]
     pub fn from_str(eds: &str) -> Self {
 
         let mut data = Vec::<u8>::new();
@@ -352,6 +353,14 @@ impl EDT {
     /// get the outgoing edges
     pub fn to(&self, idx: usize) -> Option<&HashSet<u32>> {
         self.get_edges(idx).map(|x| &x.1)
+    }
+
+    pub fn size(&self) -> u32 {
+        self.size
+    }
+
+    pub fn length(&self) -> u32 {
+        self.length
     }
 }
 
