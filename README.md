@@ -7,6 +7,22 @@ ATCGATGGG{T,C}AACTT{T,G}AG{G,T}CCGGTTTATATTGAT{T,C}CCTA{T,G}{T,A}{A,T}A{T,A}GGGG
 ```
 Parse an EDS into a DAG.
 
+|--------|-------------------|
+| Symbol | State             |
+|--------|-------------------|
+| D      | Degenerate Letter |
+| S      | Solid String      |
+
+
+|--------|--------------------------------------------------------------|
+| Symbol | Char                                                         |
+|--------|--------------------------------------------------------------|
+| N      | Nucleotide                                                   |
+| C      | Comma                                                        |
+| O      | Open bracket / degenerate letter start / solid string end    |
+| E      | Closing bracket / degenerate letter end / solid string start |
+|        |                                                              |
+
 ![EDS-automata](./Figures/eds-automata.png)
 
 Degenerate letters are between brackets.
