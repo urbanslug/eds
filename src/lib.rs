@@ -320,6 +320,39 @@ impl EDT {
             start_indices
         }
     }
+
+    /// Get the char at position
+    pub fn at(&self, idx: usize) -> Option<u8> {
+        self.data.get(idx).cloned()
+    }
+
+    /// Positions containing a given char
+    /// Allowed in lookup A, T, C, G as u8
+    pub fn get_start_indices(&self, c: u8) -> Option<&HashSet<u32>> {
+        let mut lookup_index: usize = 0;
+        match c {
+            b'A' => {},
+            b'T' => lookup_index = 1,
+            b'C' => lookup_index = 2,
+            b'G' => lookup_index = 3,
+            _ => { return None }
+        };
+        self.start_indices.get(lookup_index)
+    }
+
+    fn get_edges(&self, idx: usize) -> Option<&(HashSet<u32>, HashSet<u32>)> {
+        self.edges.get(idx)
+    }
+
+    /// get the incoming edges
+    pub fn from(&self, idx: usize) -> Option<&HashSet<u32>> {
+        self.get_edges(idx).map(|x| &x.0)
+    }
+
+    /// get the outgoing edges
+    pub fn to(&self, idx: usize) -> Option<&HashSet<u32>> {
+        self.get_edges(idx).map(|x| &x.1)
+    }
 }
 
 #[cfg(test)]
