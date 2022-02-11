@@ -15,23 +15,25 @@ Generate random EDS
 [https://github.com/webmasterar/EDSRand]()
  */
 
-#[derive(Debug ,PartialEq, Copy,  Clone)]
-enum LetterType {
-    SolidString,
-    DegenerateLetter,
-    SeedBoundary,
-    StartElastic,
-    EndElastic,
+use std::collections::HashSet;
+
+// ----
+// Types
+// -----
+
+#[derive(Debug, PartialEq, Copy,  Clone)]
+enum Letter {
+    Solid,
+    Degenerate,
 }
 
-use LetterType::{*};
-
-const EMPTY_EDGE_LIST: Vec<u32> = Vec::new();
-const EMPTY_EDGE_PIAR: (Vec<u32>, Vec<u32>) = (EMPTY_EDGE_LIST, EMPTY_EDGE_LIST);
-
-/// 0 vec of in edges
-/// 1 vec of out edges
-type EdgesPair = (Vec<u32>, Vec<u32>);
+#[derive(Debug, PartialEq, Copy,  Clone)]
+enum Char {
+    Nucleotide, // A T C or G
+    Comma, // ,
+    Open, // {
+    Close // }
+}
 
 #[derive(Debug)]
 pub struct EDT {
@@ -47,256 +49,339 @@ pub struct EDT {
     length: u32,
 
     /// length (n)
-    size: u32
+    size: u32,
+
+    /// An array of sets of start indices
+    /// Start indices for each nucleotide
+    /// Index of where each char starts
+    /// A = 0 T = 1 C = 2 G = 3
+    start_indices: Vec<HashSet<u32>>,
 }
+
+fn is_valid_index<T>(idx: usize, vec: &Vec<T>) -> bool {
+    idx < vec.len()
+}
+
+/// 0 vec of in edges
+/// 1 vec of out edges
+type EdgesPair = (HashSet<u32>, HashSet<u32>);
 
 impl EDT {
     pub fn from_str(eds: &str) -> Self {
+
         let mut data = Vec::<u8>::new();
-        let mut edges: Vec<(Vec<u32>, Vec<u32>)> = Vec::new();
+        let empty_set = HashSet::<u32>::new();
+        let empty_edge_pair = (empty_set.clone(), empty_set.clone());
+        let mut edges: Vec<(HashSet<u32>, HashSet<u32>)> = Vec::new();
+
+        // Lookup for start indices of each nucleotide
+        let mut start_indices = vec![HashSet::<u32>::new().clone(); 4];
+        let mut set_lookup_index = |c: &u8, size: u32| {
+            let mut lookup_index: usize = 0;
+            match *c {
+                b'A' => {},
+                b'T' => lookup_index = 1,
+                b'C' => lookup_index = 2,
+                b'G' => lookup_index = 3,
+                _ => panic!()
+            };
+
+            start_indices[lookup_index].insert(size);
+        };
 
         // the index of the current character
-        let mut counter: i32 = 0;
+        let mut size: u32 = 0;
 
         // Assume that we start in a solid string
         let mut length: u32 = 1;
-        let mut current_index_letter_type = SolidString;
-        let mut prev_index_letter_type = SolidString;
 
-        let mut last_solid_string_index: Option<u32> = None;
-        let mut next_solid_string_index: Option<u32> = None;
-        let mut seed_indices_start: Option<Vec<u32>> = None;
-        let mut seed_indices_stop: Option<Vec<u32>> = None;
+        let mut current_letter: Option<Letter> = None;
+        let mut current_char: Option<Char> = None;
+
+        let mut prev_letter: Option<Letter> = None;
+        let mut prev_char: Option<Char> = None;
+
+        let mut seed_starts: Option<HashSet<u32>> = None;
+        let mut seed_stops: Option<HashSet<u32>> = None;
+        let mut solid_end: Option<u32> = None;
+        let mut solid_start: Option<u32> = None;
 
         for c in eds.as_bytes() {
-
-            eprintln!(" {}\t{}\t{:?}\t\t{:?}", *c as char, counter, prev_index_letter_type, current_index_letter_type);
-
-            let prev: i32 = counter - 1;
-
+            // automaton
             match c {
+                b'A' | b'T'|  b'C' | b'G' => {
+                    prev_char = current_char;
+                    prev_letter = current_letter;
 
-                // add char
-                b'A' | b'C' | b'G' | b'T' => {
-                    let c: u8 = *c;
-
-                    let mut out_edges = EMPTY_EDGE_LIST;
-                    let mut in_edges = EMPTY_EDGE_LIST;
-
-                    if (counter as usize) >= edges.len() {
-                        out_edges = edges[counter as usize].0.clone();
-                        in_edges = edges[counter as usize].1.clone();
+                    current_char = Some(Char::Nucleotide);
+                    if current_letter.is_none() {
+                        // we started at a solid string
+                        current_letter = Some(Letter::Solid);
                     }
-
-                    match current_index_letter_type {
-                        SolidString => {
-                            if prev_index_letter_type == current_index_letter_type {
-                                out_edges.push(counter as u32 +1);
-                            }
-
-                            // add prev edge
-                            if counter > 0 && prev_index_letter_type == current_index_letter_type {
-                                in_edges.push(counter as u32 - 1);
-                            }
-
-
-                        },
-
-                        DegenerateLetter => {
-                            // add next edge
-                            if prev_index_letter_type == current_index_letter_type {
-                                // out_edges.push(counter as u32 +1);
-                            }
-
-                            // add prev edge
-                            if counter > 0 && prev_index_letter_type == current_index_letter_type {
-                                // in_edges.push(counter as u32 - 1);
-                            }
-
-                        },
-
-
-                        _ => { current_index_letter_type = DegenerateLetter }
-                    };
-
-
-
-                    // where seeds end
-                    // add this to start of next solid string
-                    if prev_index_letter_type == DegenerateLetter && current_index_letter_type == EndElastic {
-                        match seed_indices_stop.as_ref() {
-                            Some(indices) => {
-                                if prev_index_letter_type == DegenerateLetter && current_index_letter_type == SolidString {
-                                    in_edges = EMPTY_EDGE_LIST;
-                                }
-
-                                for idx in indices {
-                                    in_edges.push(*idx);
-                                }
-
-                                if prev_index_letter_type == DegenerateLetter && current_index_letter_type == SolidString {
-                                    seed_indices_stop = None;
-                                }
-
-                            },
-                            _ => {}
-                        }
-                    }
-
-
-
-                    if (counter as usize) >= edges.len() {
-                        edges[counter as usize] = (in_edges.clone(), out_edges.clone());
-                    } else {
-                        edges.push((in_edges.clone(), out_edges.clone()));
-                    }
-
-                    data.push(c);
-                    counter += 1;
-
-
-                    prev_index_letter_type = current_index_letter_type;
                 },
 
-                // add multiple out edges
-                b'{' => {
-                    if counter != 0 {
-                        length += 1;
-                    }
-
-                    prev_index_letter_type = StartElastic;
-                    current_index_letter_type = DegenerateLetter;
-                    // save the index of the last char in solid string
-                    last_solid_string_index = Some(prev as u32);
-                    seed_indices_start = Some(vec![counter as u32]);
-                    seed_indices_stop = Some(vec![]);
-                },
-
-                // add multiple in edges
-                b'}' => {
-                    length += 1;
-
-                    // add the last stop index
-                    if prev_index_letter_type != SeedBoundary {
-                        edges.push(EMPTY_EDGE_PIAR);
-                        seed_indices_stop.as_mut().map(|v| v.push(counter as u32));
-                    }
-                    // save the index of the last char in last seed
-                    // let x = (counter + 1) as u32;
-
-                    // update seed out edges
-                    // next_solid_string_index = Some(x);
-                    match seed_indices_stop.as_ref() {
-                      Some(indices) => {
-                            eprintln!("Stop indices {:?}", indices);
-                            for idx in indices {
-                                edges[*idx as usize].1.push(counter as u32);
-                            }
-                        }
-                        _ => panic!("")
-                    }
-
-                    // update seed in edges
-                    match seed_indices_start.as_ref() {
-                        Some(indices) => {
-                            eprintln!("Seed start indices {:?} {:?}", indices, last_solid_string_index);
-
-                            for idx in indices {
-                                edges[*idx as usize].0.push(last_solid_string_index.unwrap());
-                            }
-                        },
-                        None => {}
-                    }
-
-                    // Update prev solid string out edges
-                    // with seed starts
-                    match last_solid_string_index {
-                        Some(idx) => {
-                            let idx = idx as usize;
-                            seed_indices_start.map(|indices| {
-                                for i in indices {
-                                    edges[idx].1.push(i);
-                                }
-                            });
-                        },
-                        None => {} // started at dt
-                    };
-
-                    last_solid_string_index = None;
-                    seed_indices_start = None;
-
-                    current_index_letter_type = EndElastic;
-                    prev_index_letter_type = DegenerateLetter;
-                },
-
-                // Seed boundary
                 b',' => {
-
-
-                    // accumulate seed starts
-                    match seed_indices_start.as_mut() {
-                        Some(v) => v.push(counter as u32),
-                        // empty seed
-                        None => panic!(""),
-                    };
-
-                    // accumulate seed ends
-                    match seed_indices_stop.as_mut() {
-                        Some(v) => v.push(counter as u32 - 1),
-                        // empty seed
-                        None => panic!(""),
-                    };
-
-                    current_index_letter_type = DegenerateLetter;
-                    prev_index_letter_type = SeedBoundary;
+                    // does not update the letter
+                    prev_char = current_char;
+                    current_char = Some(Char::Comma);
                 },
+                b'{' => {
+                    prev_char = current_char;
+                    prev_letter = current_letter;
+
+                    current_char = Some(Char::Open);
+                    current_letter = Some(Letter::Degenerate);
+                },
+
+                b'}' => {
+                    prev_char = current_char;
+                    prev_letter = current_letter;
+
+                    current_char = Some(Char::Close);
+                    current_letter = Some(Letter::Solid);
+                }
 
                 _ => panic!("Malformed EDS {}", *c as char)
             }
+
+
+            let is_seed_start = || -> bool {
+                prev_char == Some(Char::Open) ||
+                    prev_char == Some(Char::Comma)
+            };
+
+            let is_seed_stop = || -> bool {
+                current_char == Some(Char::Close) ||
+                    prev_char == Some(Char::Comma)
+            };
+
+            // the end of a solid string
+            // that is *not* at the very end of an EDS
+            let is_solid_end = || -> bool {
+                current_char == Some(Char::Open) ||
+                    prev_char == Some(Char::Nucleotide)
+            };
+
+            let has_empty_seed = || -> bool {
+                (prev_char == Some(Char::Comma) &&
+                 current_char == Some(Char::Comma) ) ||
+                    ( prev_char == Some(Char::Comma) &&
+                      current_char == Some(Char::Close)
+                    ) ||
+                    ( prev_char == Some(Char::Open) &&
+                      current_char == Some(Char::Comma)
+                    )
+            };
+
+            // the end of a solid string
+            // that is *not* at the start of an EDS
+            let is_solid_start = || -> bool {
+                current_char == Some(Char::Close)
+            };
+
+            // continuing a seed
+            let cont_seed = || -> bool {
+                current_letter == Some(Letter::Degenerate) &&
+                    prev_letter == Some(Letter::Degenerate) &&
+                    prev_char == Some(Char::Nucleotide) &&
+                    current_char == Some(Char::Nucleotide)
+            };
+
+            // continuing a solid string
+            let cont_solid = || -> bool {
+                current_letter == Some(Letter::Solid) &&
+                    prev_letter == Some(Letter::Solid) &&
+                    prev_char == Some(Char::Nucleotide)
+            };
+
+
+            if is_seed_start() {
+                match seed_starts.as_mut() {
+                    Some(s) => { s.insert(size); },
+                    _ => {
+                        let mut s = empty_set.clone();
+                        s.insert(size);
+                        seed_starts = Some(s);
+                    }
+                }
+            }
+
+            if is_seed_stop() {
+                let seed_stop_idx = size - 1;
+                match seed_stops.as_mut() {
+                    Some(s) => { s.insert(seed_stop_idx); },
+                    _ => {
+                        let mut s = empty_set.clone();
+                        s.insert(seed_stop_idx);
+                        seed_stops = Some(s);
+                    }
+                }
+            }
+
+            if is_solid_end() {
+                match solid_end.as_mut() {
+                    None => { solid_end = Some(size) },
+                    _ => {},
+                }
+            }
+
+
+            // update edges
+            let mut update_edges = || {
+                // no need to check that the current char is a nucleotide
+                // we may have just enetered a solid string from a Char::Closing
+                if cont_solid() || cont_seed()
+                {
+                    let curr: usize = size as usize;
+                    let prev: usize = curr - 1;
+
+                    // if it's not large enough just pad it
+                    while !is_valid_index(curr, &edges) {
+                        edges.push(empty_edge_pair.clone());
+                    }
+
+                    // set prev outgoing edges
+                    edges[prev].1.insert(size);
+
+                    // set the current incoming edges
+                    edges[curr].0.insert(size-1);
+                }
+
+                if is_solid_start() {
+
+                    // if it's not large enough just pad it
+                    while !is_valid_index(size as usize, &edges) {
+                        edges.push(empty_edge_pair.clone());
+                    }
+
+                    if has_empty_seed() {
+                        let from = solid_end.unwrap();
+                        let to_idx = size as usize;
+                        let from_idx = from as usize;
+                        edges[from_idx].1.insert(size);
+                        edges[to_idx].0.insert(from);
+                    }
+
+                    match seed_starts.as_ref() {
+                        Some(s) => {
+                            for i in s {
+                                edges[*i as usize].0.insert(solid_end.unwrap());
+                                edges[solid_end.unwrap() as usize].1.insert(*i);
+                            }
+                        },
+                        _ => {}
+                    }
+
+                    match seed_stops.as_ref() {
+                        Some(s) => {
+                            for i in s {
+                                edges[*i as usize].1.insert(size);
+                                edges[size as usize].0.insert(*i);
+                            }
+                        },
+                        _ => {}
+                    }
+
+
+                    // reset
+                    seed_starts = None;
+                    seed_stops = None;
+                    solid_end = None;
+                    solid_start = None;
+                }
+            };
+
+            update_edges();
+
+            // update data
+            if current_char == Some(Char::Nucleotide) {
+                set_lookup_index(c, size);
+                // save the current letter
+                data.push(*c);
+                // inc size
+                size += 1;
+            }
+
+
+            // update letter
+            // If we have changed the letter
+            // and we were in a letter
+            if prev_letter.is_some() && prev_letter != current_letter {
+                length += 1;
+            }
+
         }
 
         EDT {
             data,
             edges,
-            size: counter as u32,
+            size,
             length,
+            start_indices
         }
     }
-
-
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    mod parse_str {
+        use super::super::*;
 
-    #[test]
-    fn test_parse_str() {
+        #[test]
+        fn test_start_degenerate() {
+            let ed_string = "{TCGA,CTA,A}ATCGATGGG{T,C}AACTT{T,G}AG{G,T}CCGGTTTATAT\
+                             TGAT{T,C}CCTA{T,G}{T,A}{A,T}A{T,A}GGGGGTCCTTTGCTTGCTGT\
+                             TG{A,G}CTC{T,G}TGAGTGAGCTTGCGAGATA";
 
-        // starts with solid string
-        // let ed_string = "AT{TCC,C}AA";
-        let ed_string = "AT{TCC,AG,C}AA";
-        // let ed_string = "AT{TCC,C,}AA";
-        let edt = EDT::from_str(ed_string);
-        eprintln!("{}", ed_string);
-        eprintln!("{:?}", edt.edges);
-        eprintln!("{}", edt.data.len());
+            let edt = EDT::from_str(ed_string);
+            assert_eq!(edt.size as usize, edt.data.len());
+        }
 
-        /*
-        // starts with solid string
-        let ed_string = "ATCGATGGG{T,C}AACTT{T,G}AG{G,T}CCGGTTTATATTGAT{T,C}CCTA\
-                         {T,G}{T,A}{A,T}A{T,A}GGGGGTCCTTTGCTTGCTGTTG{A,G}CTC{T,G}\
-                         TGAGTGAGCTTGCGAGATA";
-        let edt = EDT::from_str(ed_string);
-        eprintln!("{:?}", edt);
-        eprintln!("{}", edt.data.len());
+        #[test]
+        fn test_empty_seed() {
+            let ed_string = "AT{TCC,C,}AA";
+            let edt = EDT::from_str(ed_string);
+            assert_eq!(edt.size as usize, edt.data.len());
 
-        // starts with degenerate letter
-        let ed_string = "{TCGA,CTA,A}ATCGATGGG{T,C}AACTT{T,G}AG{G,T}CCGGTTTATAT\
-                         TGAT{T,C}CCTA{T,G}{T,A}{A,T}A{T,A}GGGGGTCCTTTGCTTGCTGT\
-                         TG{A,G}CTC{T,G}TGAGTGAGCTTGCGAGATA";
-        // let result = 2 + 2;
-        // assert_eq!(result, 4);
-         */
+            let ed_string = "AT{,TCC,C}AA";
+            let edt = EDT::from_str(ed_string);
+            assert_eq!(edt.size as usize, edt.data.len());
+
+            let ed_string = "AT{,,,}AA";
+            let edt = EDT::from_str(ed_string);
+            assert_eq!(edt.size as usize, edt.data.len());
+        }
+
+        #[test]
+        fn test_start_solid() {
+
+            // starts with solid string
+            // let ed_string = "AT{TCC,C}AA";
+            let ed_string = "AT{TCC,AG,C}AA";
+            // let ed_string = "AT{TCC,C,}AA";
+            let edt = EDT::from_str(ed_string);
+
+            assert_eq!(edt.size as usize, edt.data.len());
+
+            // multiple degenerate letters
+            // starts with solid string
+            let ed_string = "ATCGATGGG{T,C}AACTT{T,G}AG{G,T}CCGGTTTATATTGAT{T,C}CCTA\
+                             {T,G}{T,A}{A,T}A{T,A}GGGGGTCCTTTGCTTGCTGTTG{A,G}CTC{T,G}\
+                             TGAGTGAGCTTGCGAGATA";
+            let edt = EDT::from_str(ed_string);
+
+            assert_eq!(edt.size as usize, edt.data.len());
+        }
+
+        #[test]
+        fn test_multiple_degenerate_letters() {
+            let ed_string = "ATCGATGGG{T,C}AACTT{T,G}AG{G,T}CCGGTTTATATTGAT{T,C}CCTA\
+                             {T,G}{T,A}{A,T}A{T,A}GGGGGTCCTTTGCTTGCTGTTG{A,G}CTC{T,G}\
+                             TGAGTGAGCTTGCGAGATA";
+            let edt = EDT::from_str(ed_string);
+
+            assert_eq!(edt.size as usize, edt.data.len());
+        }
+
     }
 }
