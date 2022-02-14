@@ -352,7 +352,7 @@ impl EDT {
     }
 
     /// Get the char at position
-    pub fn at(&self, idx: usize) -> Option<u8> {
+    pub fn get(&self, idx: usize) -> Option<u8> {
         self.data.get(idx).cloned()
     }
 
