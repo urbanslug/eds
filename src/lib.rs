@@ -39,6 +39,9 @@ assert_eq!(edt[( edt.size() as usize - 1) ], b'A');
 use std::ops::Index;
 use std::collections::HashSet;
 
+// Minimum number of chars it can hold without re-allocating
+// assume small viral pan-genome (50k)
+const MIN_SIZE: usize = 50_000;
 
 /// 0 => from (incoming nodes)
 /// 1 => to (outgoing nodes)
@@ -119,9 +122,9 @@ impl EDT {
     #[allow(unused_assignments)]
     pub fn from_str(eds: &str) -> Self {
 
-        let mut data = Vec::<u8>::new();
+        let mut data = Vec::<u8>::with_capacity(MIN_SIZE);
         // let empty_set = HashSet::<u32>::new();
-        let mut edges: Vec<Edges> = Vec::new();
+        let mut edges = Vec::<Edges>::with_capacity(MIN_SIZE);
 
         // Lookup for start indices of each nucleotide
         let mut start_indices = [
@@ -146,7 +149,7 @@ impl EDT {
         // the index of the current character
         let mut size: u32 = 0;
 
-        // Assume that we start in a solid string
+        // number of letters
         let mut length: u32 = 1;
 
         let mut current_letter: Option<Letter> = None;
@@ -197,7 +200,6 @@ impl EDT {
 
                 _ => panic!("Malformed EDS {}", *c as char)
             }
-
 
             let is_seed_start = || -> bool {
                 prev_char == Some(Char::Open) ||
@@ -417,7 +419,6 @@ impl EDT {
         self.length
     }
 }
-
 
 impl Index<usize> for EDT {
     type Output = u8;
