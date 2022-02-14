@@ -41,7 +41,7 @@ use std::collections::HashSet;
 
 // Minimum number of chars it can hold without re-allocating
 // assume small viral pan-genome (50k)
-const MIN_SIZE: usize = 50_000;
+const EXPECTED_MIN_SIZE: usize = 50_000;
 
 /// 0 => from (incoming nodes)
 /// 1 => to (outgoing nodes)
@@ -121,11 +121,8 @@ impl EDT {
     // ----------
     #[allow(unused_assignments)]
     pub fn from_str(eds: &str) -> Self {
-
-        let mut data = Vec::<u8>::with_capacity(MIN_SIZE);
-        // let empty_set = HashSet::<u32>::new();
-        let mut edges = Vec::<Edges>::with_capacity(MIN_SIZE);
-
+        let mut data = Vec::<u8>::with_capacity(EXPECTED_MIN_SIZE);
+        let mut edges = Vec::<Edges>::with_capacity(EXPECTED_MIN_SIZE);
         // Lookup for start indices of each nucleotide
         let mut start_indices = [
             HashSet::<u32>::new(), // A
@@ -154,6 +151,7 @@ impl EDT {
         // number of letters
         let mut length: u32 = 1;
 
+        // State variables
         let mut current_letter: Option<Letter> = None;
         let mut current_char: Option<Char> = None;
 
@@ -367,6 +365,8 @@ impl EDT {
 
         }
 
+        data.shrink_to_fit();
+        edges.shrink_to_fit();
         EDT {
             data,
             edges,
