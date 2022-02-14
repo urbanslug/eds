@@ -74,7 +74,7 @@ pub struct EDT {
     /// Start indices for each nucleotide
     /// Index of where each char starts
     /// A = 0 T = 1 C = 2 G = 3
-    start_indices: Vec<HashSet<u32>>,
+    start_indices: [HashSet<u32>; 4],
 }
 
 fn is_valid_index<T>(idx: usize, vec: &Vec<T>) -> bool {
@@ -90,7 +90,12 @@ impl EDT {
         let mut edges: Vec<Edges> = Vec::new();
 
         // Lookup for start indices of each nucleotide
-        let mut start_indices = vec![HashSet::<u32>::new().clone(); 4];
+        let mut start_indices = [
+            HashSet::<u32>::new(), // A
+            HashSet::<u32>::new(), // T
+            HashSet::<u32>::new(), // C
+            HashSet::<u32>::new(), // G
+        ];
         let mut set_lookup_index = |c: &u8, size: u32| {
             let mut lookup_index: usize = 0;
             match *c {
