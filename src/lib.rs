@@ -13,6 +13,28 @@ Generate EDS from fasta file and VCF
 
 Generate random EDS
 [https://github.com/webmasterar/EDSRand]()
+
+```
+use eds::EDT;
+use std::collections::HashSet;
+
+let ed_string = "AT{TCC,C,}AA";
+let edt = EDT::from_str(ed_string);
+
+// size and length
+assert_eq!(edt.size() as usize, 8);
+assert_eq!(edt.length() as usize, 3);
+
+// edges
+let out_edges = HashSet::from([2, 5, 6]);
+assert_eq!(*edt.from(1).unwrap(), out_edges);
+
+// indexing
+assert_eq!(edt[0], b'A');
+assert_eq!(edt[5], b'C');
+assert_eq!(edt[( edt.size() as usize - 1) ], b'A');
+```
+
  */
 use std::ops::Index;
 use std::collections::HashSet;
@@ -28,10 +50,12 @@ impl Edges {
         Edges(HashSet::<u32>::new(), HashSet::<u32>::new())
     }
 
+    // outgoing edges
     fn from(&self) -> &HashSet<u32> {
-        &self.0
+        &self.1
     }
 
+    // incoming edges
     fn to(&self) -> &HashSet<u32> {
         &self.0
     }
@@ -89,7 +113,6 @@ fn is_valid_index<T>(idx: usize, vec: &Vec<T>) -> bool {
 }
 
 impl EDT {
-
     // ----------
     // Methods
     // ----------
@@ -462,6 +485,18 @@ mod tests {
             let edt = EDT::from_str(ed_string);
 
             assert_eq!(edt.size as usize, edt.data.len());
+        }
+
+        #[test]
+        fn test_edges() {
+            let ed_string = "{CAT,C,}AT{TCC,C,}AA";
+            let edt = EDT::from_str(ed_string);
+
+            let out_edges = HashSet::from([6, 10, 9]);
+            assert_eq!(*edt.from(5).unwrap(), out_edges);
+
+            let in_edges = HashSet::from([5,8,9]);
+            assert_eq!(*edt.to(10).unwrap(), in_edges);
         }
 
         #[test]
