@@ -27,7 +27,7 @@ assert_eq!(edt.length() as usize, 3);
 
 // edges
 let out_edges = HashSet::from([2, 5, 6]);
-assert_eq!(*edt.from(1).unwrap(), out_edges);
+assert_eq!(*edt.from(1), out_edges);
 
 // indexing
 assert_eq!(edt[0], b'A');
@@ -396,18 +396,15 @@ impl EDT {
         &self.start_indices[lookup_index]
     }
 
-    fn get_edges(&self, idx: usize) -> Option<&Edges> {
-        self.edges.get(idx)
+
+    /// The outgoing edges from nucleotide at index idx
+    pub fn from(&self, idx: usize) -> &HashSet<u32> {
+        &self.edges[idx].from()
     }
 
-    /// get the incoming edges
-    pub fn from(&self, idx: usize) -> Option<&HashSet<u32>> {
-        self.get_edges(idx).map(|x: &Edges| x.from())
-    }
-
-    /// get the outgoing edges
-    pub fn to(&self, idx: usize) -> Option<&HashSet<u32>> {
-        self.get_edges(idx).map(|x: &Edges| x.to())
+    /// indices of the nodes with edges coming into nucleotide at index idx
+    pub fn to(&self, idx: usize) -> &HashSet<u32> {
+        &self.edges[idx].to()
     }
 
     pub fn size(&self) -> u32 {
@@ -494,10 +491,10 @@ mod tests {
             let edt = EDT::from_str(ed_string);
 
             let out_edges = HashSet::from([6, 10, 9]);
-            assert_eq!(*edt.from(5).unwrap(), out_edges);
+            assert_eq!(*edt.from(5), out_edges);
 
             let in_edges = HashSet::from([5,8,9]);
-            assert_eq!(*edt.to(10).unwrap(), in_edges);
+            assert_eq!(*edt.to(10), in_edges);
         }
 
         #[test]
