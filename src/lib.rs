@@ -382,16 +382,17 @@ impl EDT {
 
     /// Positions containing a given char
     /// Allowed in lookup A, T, C or G as u8
-    pub fn get_start_indices(&self, c: u8) -> Option<&HashSet<u32>> {
+    pub fn get_start_indices(&self, c: u8) -> &HashSet<u32> {
         let mut lookup_index: usize = 0;
         match c {
             b'A' => {},
             b'T' => lookup_index = 1,
             b'C' => lookup_index = 2,
             b'G' => lookup_index = 3,
-            _ => { return None }
+            _ => panic!("EDT::get_start_indices expects A, T, C or G. Got {c}")
         };
-        self.start_indices.get(lookup_index)
+
+        &self.start_indices[lookup_index]
     }
 
     fn get_edges(&self, idx: usize) -> Option<&Edges> {
@@ -507,6 +508,19 @@ mod tests {
             assert_eq!(edt[0], b'A');
             assert_eq!(edt[5], b'C');
             assert_eq!(edt[( edt.size() as usize - 1) ], b'A');
+        }
+
+        #[test]
+        fn test_find_start_indices() {
+            let ed_string = "AT{TCC,C,}AA";
+            let edt = EDT::from_str(ed_string);
+
+
+            let start_a = HashSet::from([0, 6, 7]);
+            assert_eq!(*edt.get_start_indices(b'A'), start_a);
+
+            let start_g = HashSet::new();
+            assert_eq!(*edt.get_start_indices(b'G'), start_g);
         }
     }
 }
