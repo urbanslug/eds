@@ -17,8 +17,8 @@ Generate random EDS
 
 use std::collections::HashSet;
 
-
-/// 0 => from (incoming nodes) 1 => to (outgoing nodes)
+/// 0 => from (incoming nodes)
+/// 1 => to (outgoing nodes)
 #[derive(Debug)]
 struct Edges(HashSet<u32>, HashSet<u32>);
 
@@ -36,22 +36,25 @@ impl Edges {
     }
 }
 
-// ----
-// Types
-// -----
-
+/// A letter in the EDT. It can either be degenerate or solid
 #[derive(Debug, PartialEq, Copy,  Clone)]
 enum Letter {
     Solid,
     Degenerate,
 }
 
+/// A single ASCII character expected while parsing the EDT.
+/// Expected characters are
+/// one of four characters A, T, C or G for nucleotides
+/// , a comma to separate degenerate letters
+/// { an open curly bracket to start a degenerate letter
+/// } a closed curly bracket to end a degenerate letter
 #[derive(Debug, PartialEq, Copy,  Clone)]
 enum Char {
-    Nucleotide, // A T C or G
-    Comma, // ,
-    Open, // {
-    Close // }
+    Nucleotide,
+    Comma,
+    Open,
+    Close
 }
 
 #[derive(Debug)]
@@ -77,11 +80,18 @@ pub struct EDT {
     start_indices: [HashSet<u32>; 4],
 }
 
-fn is_valid_index<T>(idx: usize, vec: &Vec<T>) -> bool {
-    idx < vec.len()
-}
 
 impl EDT {
+    // ----------
+    // Helpers
+    // ----------
+    fn is_valid_index<T>(idx: usize, vec: &Vec<T>) -> bool {
+        idx < vec.len()
+    }
+
+    // ----------
+    // Methods
+    // ----------
     #[allow(unused_assignments)]
     pub fn from_str(eds: &str) -> Self {
 
@@ -347,7 +357,7 @@ impl EDT {
     }
 
     /// Positions containing a given char
-    /// Allowed in lookup A, T, C, G as u8
+    /// Allowed in lookup A, T, C or G as u8
     pub fn get_start_indices(&self, c: u8) -> Option<&HashSet<u32>> {
         let mut lookup_index: usize = 0;
         match c {
