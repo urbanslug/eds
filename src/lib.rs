@@ -17,6 +17,25 @@ Generate random EDS
 
 use std::collections::HashSet;
 
+
+/// 0 => from (incoming nodes) 1 => to (outgoing nodes)
+#[derive(Debug)]
+struct Edges(HashSet<u32>, HashSet<u32>);
+
+impl Edges {
+    fn new() -> Self {
+        Edges(HashSet::<u32>::new(), HashSet::<u32>::new())
+    }
+
+    fn from(&self) -> &HashSet<u32> {
+        &self.0
+    }
+
+    fn to(&self) -> &HashSet<u32> {
+        &self.0
+    }
+}
+
 // ----
 // Types
 // -----
@@ -43,7 +62,7 @@ pub struct EDT {
     /// Connections between chars
     // TODO: use an adj matrix
     // In edges ... out edges
-    edges: Vec<EdgesPair>,
+    edges: Vec<Edges>,
 
     /// size (N)
     length: u32,
@@ -62,18 +81,13 @@ fn is_valid_index<T>(idx: usize, vec: &Vec<T>) -> bool {
     idx < vec.len()
 }
 
-/// 0 vec of in edges
-/// 1 vec of out edges
-type EdgesPair = (HashSet<u32>, HashSet<u32>);
-
 impl EDT {
     #[allow(unused_assignments)]
     pub fn from_str(eds: &str) -> Self {
 
         let mut data = Vec::<u8>::new();
-        let empty_set = HashSet::<u32>::new();
-        let empty_edge_pair = (empty_set.clone(), empty_set.clone());
-        let mut edges: Vec<(HashSet<u32>, HashSet<u32>)> = Vec::new();
+        // let empty_set = HashSet::<u32>::new();
+        let mut edges: Vec<Edges> = Vec::new();
 
         // Lookup for start indices of each nucleotide
         let mut start_indices = vec![HashSet::<u32>::new().clone(); 4];
@@ -200,7 +214,7 @@ impl EDT {
                 match seed_starts.as_mut() {
                     Some(s) => { s.insert(size); },
                     _ => {
-                        let mut s = empty_set.clone();
+                        let mut s = HashSet::<u32>::new();
                         s.insert(size);
                         seed_starts = Some(s);
                     }
@@ -212,7 +226,7 @@ impl EDT {
                 match seed_stops.as_mut() {
                     Some(s) => { s.insert(seed_stop_idx); },
                     _ => {
-                        let mut s = empty_set.clone();
+                        let mut s = HashSet::<u32>::new();
                         s.insert(seed_stop_idx);
                         seed_stops = Some(s);
                     }
@@ -238,7 +252,7 @@ impl EDT {
 
                     // if it's not large enough just pad it
                     while !is_valid_index(curr, &edges) {
-                        edges.push(empty_edge_pair.clone());
+                        edges.push(Edges::new());
                     }
 
                     // set prev outgoing edges
@@ -252,7 +266,7 @@ impl EDT {
 
                     // if it's not large enough just pad it
                     while !is_valid_index(size as usize, &edges) {
-                        edges.push(empty_edge_pair.clone());
+                        edges.push(Edges::new());
                     }
 
                     if has_empty_seed() {
@@ -341,18 +355,18 @@ impl EDT {
         self.start_indices.get(lookup_index)
     }
 
-    fn get_edges(&self, idx: usize) -> Option<&(HashSet<u32>, HashSet<u32>)> {
+    fn get_edges(&self, idx: usize) -> Option<&Edges> {
         self.edges.get(idx)
     }
 
     /// get the incoming edges
     pub fn from(&self, idx: usize) -> Option<&HashSet<u32>> {
-        self.get_edges(idx).map(|x| &x.0)
+        self.get_edges(idx).map(|x: &Edges| x.from())
     }
 
     /// get the outgoing edges
     pub fn to(&self, idx: usize) -> Option<&HashSet<u32>> {
-        self.get_edges(idx).map(|x| &x.1)
+        self.get_edges(idx).map(|x: &Edges| x.to())
     }
 
     pub fn size(&self) -> u32 {
