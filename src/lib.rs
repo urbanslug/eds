@@ -133,6 +133,8 @@ impl EDT {
             HashSet::<u32>::new(), // C
             HashSet::<u32>::new(), // G
         ];
+
+        // set the character and position of the nucleotide
         let mut set_lookup_index = |c: &u8, size: u32| {
             let mut lookup_index: usize = 0;
             match *c {
@@ -250,7 +252,6 @@ impl EDT {
                     prev_char == Some(Char::Nucleotide)
             };
 
-
             if is_seed_start() {
                 match seed_starts.as_mut() {
                     Some(s) => { s.insert(size); },
@@ -280,7 +281,6 @@ impl EDT {
                     _ => {},
                 }
             }
-
 
             // update edges
             let mut update_edges = || {
@@ -357,7 +357,6 @@ impl EDT {
                 // inc size
                 size += 1;
             }
-
 
             // update letter
             // If we have changed the letter
