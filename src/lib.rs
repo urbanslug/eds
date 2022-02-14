@@ -14,8 +14,9 @@ Generate EDS from fasta file and VCF
 Generate random EDS
 [https://github.com/webmasterar/EDSRand]()
  */
-
+use std::ops::Index;
 use std::collections::HashSet;
+
 
 /// 0 => from (incoming nodes)
 /// 1 => to (outgoing nodes)
@@ -80,14 +81,14 @@ pub struct EDT {
     start_indices: [HashSet<u32>; 4],
 }
 
+// ----------
+// Helpers
+// ----------
+fn is_valid_index<T>(idx: usize, vec: &Vec<T>) -> bool {
+    idx < vec.len()
+}
 
 impl EDT {
-    // ----------
-    // Helpers
-    // ----------
-    fn is_valid_index<T>(idx: usize, vec: &Vec<T>) -> bool {
-        idx < vec.len()
-    }
 
     // ----------
     // Methods
@@ -393,6 +394,15 @@ impl EDT {
     }
 }
 
+
+impl Index<usize> for EDT {
+    type Output = u8;
+
+    fn index(&self, idx: usize) -> &Self::Output {
+        &self.data[idx]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     mod parse_str {
@@ -454,5 +464,14 @@ mod tests {
             assert_eq!(edt.size as usize, edt.data.len());
         }
 
+        #[test]
+        fn test_indexing() {
+            let ed_string = "AT{TCC,C,}AA";
+            let edt = EDT::from_str(ed_string);
+
+            assert_eq!(edt[0], b'A');
+            assert_eq!(edt[5], b'C');
+            assert_eq!(edt[( edt.size() as usize - 1) ], b'A');
+        }
     }
 }
