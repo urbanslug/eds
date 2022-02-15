@@ -106,6 +106,9 @@ pub struct EDT {
     /// Index of where each char starts
     /// A = 0 T = 1 C = 2 G = 3
     start_indices: [HashSet<u32>; 4],
+
+    solid_strings: Vec<(usize, usize)>,
+    degenerate_letters: Vec<(usize, usize)>,
 }
 
 // ----------
@@ -123,6 +126,8 @@ impl EDT {
     pub fn from_str(eds: &str) -> Self {
         let mut data = Vec::<u8>::with_capacity(EXPECTED_MIN_SIZE);
         let mut edges = Vec::<Edges>::with_capacity(EXPECTED_MIN_SIZE);
+        let mut solid_strings = Vec::<(usize, usize)>::with_capacity(EXPECTED_MIN_SIZE);
+        let mut degenerate_letters = Vec::<(usize, usize)>::with_capacity(EXPECTED_MIN_SIZE);
         // Lookup for start indices of each nucleotide
         let mut start_indices = [
             HashSet::<u32>::new(), // A
@@ -162,6 +167,11 @@ impl EDT {
         let mut seed_stops: Option<HashSet<u32>> = None;
         let mut solid_end: Option<u32> = None;
         let mut solid_start: Option<u32> = None;
+
+        let mut solid_string_start: Option<u32> = None;
+        let mut solid_string_end: Option<u32> = None;
+        let mut degenerate_letter_start: Option<u32> = None;
+        let mut degenerate_letter_end: Option<u32> = None;
 
         for c in eds.as_bytes() {
             // automaton
@@ -211,11 +221,20 @@ impl EDT {
                     prev_char == Some(Char::Comma)
             };
 
+            // from the perspective of a degenerate letter
             // the end of a solid string
             // that is *not* at the very end of an EDS
             let is_solid_end = || -> bool {
                 current_char == Some(Char::Open) ||
                     prev_char == Some(Char::Nucleotide)
+            };
+
+            // from the perspective of the solid string
+            // the end of a solid string
+            // that is *not* at the very end of an EDS
+            let is_solid_string_end = || -> bool {
+                prev_char == Some(Char::Nucleotide) &&
+                    current_char == Some(Char::Open)
             };
 
             let has_empty_seed = || -> bool {
@@ -250,6 +269,14 @@ impl EDT {
                     prev_char == Some(Char::Nucleotide)
             };
 
+            let is_degenerate_letter_start = || -> bool {
+                current_char == Some(Char::Open)
+            };
+
+            let is_degenerate_letter_stop = || -> bool {
+                current_char == Some(Char::Close)
+            };
+
             if is_seed_start() {
                 match seed_starts.as_mut() {
                     Some(s) => { s.insert(size); },
@@ -260,6 +287,7 @@ impl EDT {
                     }
                 }
             }
+
 
             if is_seed_stop() {
                 let seed_stop_idx = size - 1;
@@ -273,13 +301,55 @@ impl EDT {
                 }
             }
 
+            if is_degenerate_letter_start() {
+                degenerate_letter_start = Some(size);
+            }
+
+            if is_degenerate_letter_stop() {
+                degenerate_letter_end = Some(size);
+            }
+
             if is_solid_end() {
                 match solid_end.as_mut() {
                     None => { solid_end = Some(size) },
                     _ => {},
-                }
+                };
             }
 
+
+            if is_solid_string_end() {
+                solid_string_end = Some(size);
+            }
+
+            if is_solid_start() {
+                solid_string_start = Some(size);
+            }
+
+            // TODO: improve this
+            let mut update_offsets = || {
+                if is_degenerate_letter_stop() {
+                    degenerate_letters.push(
+                        (degenerate_letter_start.unwrap() as usize, degenerate_letter_end.unwrap() as usize)
+                    );
+
+                    degenerate_letter_start = None;
+                    degenerate_letter_end = None;
+                }
+
+                if is_solid_string_end() {
+                    if solid_string_start.is_none() {
+                        solid_strings.push((0, solid_string_end.unwrap() as usize))
+                    } else {
+                        solid_strings.push(
+                            (solid_string_start.unwrap() as usize, solid_string_end.unwrap() as usize)
+                        )
+                    }
+
+                    solid_string_start = None;
+                    solid_string_end = None;
+                }
+
+            };
             // update edges
             let mut update_edges = || {
                 // no need to check that the current char is a nucleotide
@@ -345,9 +415,10 @@ impl EDT {
                 }
             };
 
-            update_edges();
-
             // update data
+            update_edges();
+            update_offsets();
+
             if current_char == Some(Char::Nucleotide) {
                 set_lookup_index(c, size);
                 // save the current letter
@@ -365,14 +436,25 @@ impl EDT {
 
         }
 
+        // add final offset info
+        if current_char == Some(Char::Nucleotide) {
+            solid_strings.push (
+                (solid_string_start.unwrap() as usize, size as usize))
+        }
+
+        degenerate_letters.shrink_to_fit();
+        solid_strings.shrink_to_fit();
         data.shrink_to_fit();
         edges.shrink_to_fit();
+
         EDT {
             data,
             edges,
             size,
             length,
-            start_indices
+            start_indices,
+            degenerate_letters,
+            solid_strings,
         }
     }
 
@@ -383,6 +465,14 @@ impl EDT {
 
     pub fn get_data(&self) -> &Vec<u8> {
         &self.data
+    }
+
+    pub fn get_solid_string_offsets(&self) -> &Vec<(usize, usize)> {
+        &self.solid_strings
+    }
+
+    pub fn get_degenerate_letter_offsets(&self) -> &Vec<(usize, usize)> {
+        &self.degenerate_letters
     }
 
     /// Positions containing a given char
@@ -399,7 +489,6 @@ impl EDT {
 
         &self.start_indices[lookup_index]
     }
-
 
     /// The outgoing edges from nucleotide at index idx
     pub fn from(&self, idx: usize) -> &HashSet<u32> {
@@ -488,6 +577,9 @@ mod tests {
 
             assert_eq!(edt.size as usize, edt.data.len());
         }
+    }
+    mod dag_construction {
+        use super::super::*;
 
         #[test]
         fn test_edges() {
@@ -523,5 +615,50 @@ mod tests {
             let start_g = HashSet::new();
             assert_eq!(*edt.get_start_indices(b'G'), start_g);
         }
+        }
+    mod offsets {
+        use super::super::*;
+
+        // find char approximate char positions
+        // echo "{CAT,C,}AT{TCC,C,}AA" | grep -aob '}'
+
+        #[test]
+        fn test_degenerate_letters() {
+            let ed_string = "{CAT,C,}AT{TCC,C,}AA";
+            let edt = EDT::from_str(ed_string);
+
+            let expected = Vec::from([(0, 4), (6, 10)]);
+            assert_eq!(edt.degenerate_letters, expected);
+
+            let ed_string = "AC{CAT,C,}AT{TCC,C,}AA";
+            let edt = EDT::from_str(ed_string);
+
+            let expected = Vec::from([(2, 6), (8, 12)]);
+            assert_eq!(edt.degenerate_letters, expected);
+
+
+            let ed_string = "AC{CAT,C,}AT{TCC,C,}AA{CGA,TC}";
+            let edt = EDT::from_str(ed_string);
+
+            let expected = Vec::from([(2, 6), (8, 12), (14, 19)]);
+            assert_eq!(edt.degenerate_letters, expected);
+        }
+
+        #[test]
+        fn test_solid_strings() {
+
+            let ed_string = "{CAT,C,}AT{TCC,C,}AA";
+            let edt = EDT::from_str(ed_string);
+
+            let expected = Vec::from([(4, 6), (10,12)]);
+            assert_eq!(edt.solid_strings, expected);
+
+            let ed_string = "AC{CAT,C,}AT{TCC,C,}AA";
+            let edt = EDT::from_str(ed_string);
+
+            let expected = Vec::from([(0,2), (6,8), (12,14)]);
+            assert_eq!(edt.solid_strings, expected);
+        }
+
     }
 }
