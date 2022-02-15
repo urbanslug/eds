@@ -381,6 +381,10 @@ impl EDT {
         self.data.get(idx).cloned()
     }
 
+    pub fn get_data(&self) -> &Vec<u8> {
+        &self.data
+    }
+
     /// Positions containing a given char
     /// Allowed in lookup A, T, C or G as u8
     pub fn get_start_indices(&self, c: u8) -> &HashSet<u32> {
