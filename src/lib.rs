@@ -34,10 +34,11 @@ assert_eq!(edt[0], b'A');
 assert_eq!(edt[5], b'C');
 assert_eq!(edt[( edt.size() as usize - 1) ], b'A');
 ```
-
  */
+
 use std::ops::Index;
 use std::collections::HashSet;
+use std::iter::IntoIterator;
 
 // Minimum number of chars it can hold without re-allocating
 // assume small viral pan-genome (50k)
@@ -64,6 +65,13 @@ impl Edges {
     }
 }
 
+impl<'a> Iterator for &'a Edges {
+    type Item = &'a HashSet<u32>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        Some(&self.1)
+    }
+}
 /// A letter in the EDT. It can either be degenerate or solid
 #[derive(Debug, PartialEq, Copy,  Clone)]
 enum Letter {
@@ -544,10 +552,23 @@ impl Index<usize> for EDT {
     }
 }
 
+// ---------
+// Iterator
+// ---------
+impl IntoIterator for EDT {
+    type Item = u8;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.data.into_iter()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     mod parse_str {
         use super::super::*;
+        use pretty_assertions::assert_eq;
 
         #[test]
         fn test_adjacent_degenerate_letters() {
@@ -620,6 +641,7 @@ mod tests {
     }
     mod dag_construction {
         use super::super::*;
+        use pretty_assertions::assert_eq;
 
         #[test]
         fn test_edges() {
@@ -674,6 +696,7 @@ mod tests {
         }
     mod offsets {
         use super::super::*;
+        use pretty_assertions::assert_eq;
 
         // find char approximate char positions
         // echo "{CAT,C,}AT{TCC,C,}AA" | grep -aob '}'
@@ -725,5 +748,15 @@ mod tests {
 
         }
 
+    }
+    mod iterators {
+        use super::super::*;
+        use pretty_assertions::assert_eq;
+
+        #[test]
+        fn test_adjacent_degenerate_letters() {
+            let ed_string = "TGAT{T,C}CCTA{T,G}{T,A}{A,T}A{T,A}GG";
+            let _edt = EDT::from_str(ed_string);
+        }
     }
 }
