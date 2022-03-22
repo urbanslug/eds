@@ -212,6 +212,11 @@ impl EDT {
                     current_letter = Some(Letter::Solid);
                 }
 
+                // handle whitespace
+                b'\t' | b'\n' | b' ' => {
+                    continue;
+                }
+
                 _ => panic!("Malformed EDS {}", *c as char)
             }
 
@@ -565,6 +570,34 @@ mod tests {
         }
 
         #[test]
+        fn test_ignore_whitespace() {
+            // tabs
+            let ed_string = "ATCGATGGG{T,C}AACTT\t\
+                             {T,G}AG{G,T}CCGGTTTATATTGAT{T,C}CCTA";
+            let edt = EDT::from_str(ed_string);
+            assert_eq!(edt.size as usize, edt.data.len());
+
+            // space
+            let ed_string = "ATCGATGGG{T,C}AACTT{T, ,G}AG";
+            let edt = EDT::from_str(ed_string);
+            assert_eq!(edt.size as usize, edt.data.len());
+
+            // newlines
+            let ed_string = "ATCGATGGG{T,C}AACTT{T,G}\n\
+                             AG{G,T}CCGGTTTATATTGAT{T,C}CCTA";
+            let edt = EDT::from_str(ed_string);
+            assert_eq!(edt.size as usize, edt.data.len());
+
+            // tabs and newlines
+            let ed_string = "ATCGATGGG{T,C}\n\
+                             AACTT{T,G}\t\
+                             AG{G,T}CCGGTTTATATTGAT{T,C}CCTA";
+            let edt = EDT::from_str(ed_string);
+            assert_eq!(edt.size as usize, edt.data.len());
+        }
+
+
+        #[test]
         fn test_start_degenerate() {
             let ed_string = "{TCGA,CTA,A}ATCGATGGG{T,C}AACTT{T,G}AG{G,T}CCGGTTTATAT\
                              TGAT{T,C}CCTA{T,G}{T,A}{A,T}A{T,A}GGGGGTCCTTTGCTTGCTGT\
@@ -701,8 +734,6 @@ mod tests {
 
         #[test]
         fn test_solid_strings() {
-
-
             let ed_string = "{CAT,C,}AT{TCC,C,}AA";
             let edt = EDT::from_str(ed_string);
 
