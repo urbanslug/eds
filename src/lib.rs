@@ -124,11 +124,13 @@ impl EDT {
     // ----------
     #[allow(unused_assignments)]
     pub fn from_str(eds: &str) -> Self {
+        // Struct fields
         let mut data = Vec::<u8>::with_capacity(EXPECTED_MIN_SIZE);
         let mut edges = Vec::<Edges>::with_capacity(EXPECTED_MIN_SIZE);
         let mut solid_strings = Vec::<(usize, usize)>::with_capacity(EXPECTED_MIN_SIZE);
         let mut degenerate_letters = Vec::<(usize, usize)>::with_capacity(EXPECTED_MIN_SIZE);
-        // Lookup for start indices of each nucleotide
+
+        // A lookup for start indices of each nucleotide
         let mut start_indices = [
             HashSet::<u32>::new(), // A
             HashSet::<u32>::new(), // T
@@ -136,7 +138,7 @@ impl EDT {
             HashSet::<u32>::new(), // G
         ];
 
-        // set the character and position of the nucleotide
+        // Set the character and position of the nucleotide
         let mut set_lookup_index = |c: &u8, size: u32| {
             let mut lookup_index: usize = 0;
             match *c {
@@ -165,6 +167,10 @@ impl EDT {
 
         let mut seed_starts: Option<HashSet<u32>> = None;
         let mut seed_stops: Option<HashSet<u32>> = None;
+
+        // applicable for multiple adjacent degenerate letters
+        let mut prev_seed_stops: Option<HashSet<u32>> = None;
+
         let mut solid_end: Option<u32> = None;
         let mut solid_start: Option<u32> = None;
 
@@ -176,6 +182,8 @@ impl EDT {
         let mut solid_string_count: u32 = 0;
         let mut degenerate_letter_count: u32 = 0;
         let mut contains_empty_seed = false;
+
+        let mut in_adj_degenerate_letter = false;
 
         for c in eds.as_bytes() {
             // automaton
@@ -212,12 +220,17 @@ impl EDT {
                     current_letter = Some(Letter::Solid);
                 }
 
+                // handle whitespace
+                b'\t' | b'\n' | b' ' => {
+                    continue;
+                }
+
                 _ => panic!("Malformed EDS {}", *c as char)
             }
 
-            // ---
+            // --------------------------
             // Inside a degenerate letter
-            // ---
+            // --------------------------
             let is_seed_start = || -> bool {
                 prev_char == Some(Char::Open) ||
                     prev_char == Some(Char::Comma)
@@ -230,12 +243,11 @@ impl EDT {
 
             let found_empty_seed = || -> bool {
                 ( prev_char == Some(Char::Open) &&
-                  current_char == Some(Char::Comma)
-                ) || ( prev_char == Some(Char::Comma) &&
+                  current_char == Some(Char::Comma) ) ||
+                    ( prev_char == Some(Char::Comma) &&
                         current_char == Some(Char::Comma) ) ||
                     ( prev_char == Some(Char::Comma) &&
-                      current_char == Some(Char::Close)
-                    )
+                      current_char == Some(Char::Close) )
             };
 
             // continuing a seed
@@ -254,9 +266,18 @@ impl EDT {
                 current_char == Some(Char::Close)
             };
 
-            // ---
+            let is_adjacent_degenerate_letter = || -> bool {
+                    prev_char == Some(Char::Close) && current_char == Some(Char::Open)
+            };
+
+            let is_end_of_adjacent_degenerate_letter = |in_adj_degenerate_letter: bool| -> bool {
+                is_seed_stop() && in_adj_degenerate_letter
+            };
+
+
+            // ------------
             // Solid string
-            // ---
+            // ------------
 
             // from the perspective of the solid string
             // the end of a solid string
@@ -268,7 +289,9 @@ impl EDT {
 
             // the start of a solid string
             let is_solid_string_start = || -> bool {
-                current_char == Some(Char::Close) ||
+                // avoids the case of two degenerate letters
+                (prev_char == Some(Char::Close) && current_char == Some(Char::Nucleotide)) ||
+                    // initial solid string
                     (data.len() == 0 &&
                      current_char == Some(Char::Nucleotide) &&
                      current_letter == Some(Letter::Solid))
@@ -287,10 +310,9 @@ impl EDT {
                     prev_char == Some(Char::Nucleotide)
             };
 
-
-            // ----
+            // ----------------
             // Update DAG state
-            // ----
+            // ----------------
 
             if is_seed_start() {
                 match seed_starts.as_mut() {
@@ -302,7 +324,6 @@ impl EDT {
                     }
                 }
             }
-
 
             if is_seed_stop() {
                 let seed_stop_idx = size - 1;
@@ -332,7 +353,9 @@ impl EDT {
                     _ => {},
                 };
             }
-            */
+             */
+
+
 
             if is_solid_string_end() {
                 solid_string_end = Some(size-1);
@@ -347,6 +370,11 @@ impl EDT {
             if found_empty_seed() {
                 contains_empty_seed = true;
             }
+
+            if is_adjacent_degenerate_letter() {
+                in_adj_degenerate_letter = true;
+            }
+
 
             // TODO: improve this
             let mut update_offsets = || {
@@ -375,10 +403,12 @@ impl EDT {
 
             // update edges
             let mut update_edges = || {
+
+                // eprintln!("{} {} {}", *c as char, size, is_solid_string_start());
+
                 // no need to check that the current char is a nucleotide
                 // we may have just enetered a solid string from a Char::Closing
-                if cont_solid() || cont_seed()
-                {
+                if cont_solid() || cont_seed() {
                     let curr: usize = size as usize;
                     let prev: usize = curr - 1;
 
@@ -395,7 +425,6 @@ impl EDT {
                 }
 
                 if is_solid_string_start() {
-
                     // if it's not large enough just pad it
                     while !is_valid_index(size as usize, &edges) {
                         edges.push(Edges::new());
@@ -403,7 +432,7 @@ impl EDT {
 
                     // add an edge between the two adj solid strings
                     if contains_empty_seed && solid_string_count > 1 && is_solid_string_start()  {
-                        let from = solid_end.expect(&format!("{size}"));
+                        let from = solid_end.unwrap_or_else(|| panic!("{}", size) );
                         let to_idx = size as usize;
                         let from_idx = from as usize;
                         edges[from_idx].1.insert(size);
@@ -434,11 +463,65 @@ impl EDT {
                         _ => {}
                     }
 
-
                     seed_starts = None;
                     seed_stops = None;
                     solid_end = None;
                     solid_start = None;
+                    in_adj_degenerate_letter = false;
+                }
+
+                if is_adjacent_degenerate_letter() {
+                    while !is_valid_index(size as usize, &edges) {
+                        edges.push(Edges::new());
+                    }
+
+                    if solid_end.is_some() {
+                        match seed_starts.as_ref() {
+                            Some(seed_starts_) => {
+                                for seed_start in seed_starts_ {
+                                    edges[*seed_start as usize].0.insert(solid_end.expect(&format!("{size}")));
+                                    edges[solid_end.unwrap() as usize].1.insert(*seed_start);
+                                }
+                            },
+                            _ => {}
+                        }
+                    }
+
+
+                    if prev_seed_stops.is_some() {
+
+                    }
+
+                    prev_seed_stops = seed_stops.clone();
+                    solid_end = None;
+                    seed_starts = None;
+                    seed_stops = None;
+                }
+
+                if is_end_of_adjacent_degenerate_letter(in_adj_degenerate_letter) {
+                    while !is_valid_index(size as usize, &edges) {
+                        edges.push(Edges::new());
+                    }
+
+                    match seed_starts.as_ref() {
+                        Some(s) => {
+                            for seed_start in s {
+                                match prev_seed_stops.as_ref() {
+                                    Some(x) => {
+                                        for seed_stop in x {
+                                            edges[*seed_start as usize].0.insert(*seed_stop as u32);
+                                            edges[*seed_stop as usize].1.insert(*seed_start as u32);
+                                        }
+
+                                    },
+                                    None => {}
+                                };
+                            }
+                        },
+                        None => {}
+                    }
+
+                    // eprintln!("{} {} {}", *c as char, size, is_solid_string_start());
                 }
             };
 
@@ -551,17 +634,48 @@ mod tests {
 
         #[test]
         fn test_adjacent_degenerate_letters() {
+            let ed_string = "A{T,G}{C,A}{T,A}TC";
+            let edt = EDT::from_str(ed_string);
+            assert_eq!(edt.size as usize, edt.data.len());
+
+            let ed_string = "A{T,G}{T,A}TC";
+            let edt = EDT::from_str(ed_string);
+            assert_eq!(edt.size as usize, edt.data.len());
 
             let ed_string = "CCTA{T,G}{T,A}CAG";
             let edt = EDT::from_str(ed_string);
-            assert!(false);
-            // assert_eq!(edt.size as usize, edt.data.len());
+            assert_eq!(edt.size as usize, edt.data.len());
 
             let ed_string = "TGAT{T,C}CCTA{T,G}{T,A}{A,T}A{T,A}GG";
-
             let edt = EDT::from_str(ed_string);
-            assert!(false);
-            // assert_eq!(edt.size as usize, edt.data.len());
+            assert_eq!(edt.size as usize, edt.data.len());
+        }
+
+        #[test]
+        fn test_ignore_whitespace() {
+            // tabs
+            let ed_string = "ATCGATGGG{T,C}AACTT\t\
+                             {T,G}AG{G,T}CCGGTTTATATTGAT{T,C}CCTA";
+            let edt = EDT::from_str(ed_string);
+            assert_eq!(edt.size as usize, edt.data.len());
+
+            // space
+            let ed_string = "ATCGATGGG{T,C}AACTT{T, ,G}AG";
+            let edt = EDT::from_str(ed_string);
+            assert_eq!(edt.size as usize, edt.data.len());
+
+            // newlines
+            let ed_string = "ATCGATGGG{T,C}AACTT{T,G}\n\
+                             AG{G,T}CCGGTTTATATTGAT{T,C}CCTA";
+            let edt = EDT::from_str(ed_string);
+            assert_eq!(edt.size as usize, edt.data.len());
+
+            // tabs and newlines
+            let ed_string = "ATCGATGGG{T,C}\n\
+                             AACTT{T,G}\t\
+                             AG{G,T}CCGGTTTATATTGAT{T,C}CCTA";
+            let edt = EDT::from_str(ed_string);
+            assert_eq!(edt.size as usize, edt.data.len());
         }
 
         #[test]
@@ -701,8 +815,6 @@ mod tests {
 
         #[test]
         fn test_solid_strings() {
-
-
             let ed_string = "{CAT,C,}AT{TCC,C,}AA";
             let edt = EDT::from_str(ed_string);
 
