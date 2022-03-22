@@ -36,6 +36,7 @@ assert_eq!(edt[( edt.size() as usize - 1) ], b'A');
 ```
 
  */
+use std::fs;
 use std::ops::Index;
 use std::collections::HashSet;
 
@@ -123,7 +124,19 @@ impl EDT {
     // Methods
     // ----------
     #[allow(unused_assignments)]
+    pub fn from_file(file_path: &str) -> Self {
+        // TODO: read line by line?
+        let data = fs::read(file_path).unwrap_or_else(|_| panic!("Unable to read file {}", file_path));
+        EDT::from_u8_slice(&data)
+    }
+
+    #[allow(unused_assignments)]
     pub fn from_str(eds: &str) -> Self {
+        EDT::from_u8_slice(eds.as_bytes())
+    }
+
+    #[allow(unused_assignments)]
+    pub fn from_u8_slice(eds: &[u8]) -> Self {
         // Struct fields
         let mut data = Vec::<u8>::with_capacity(EXPECTED_MIN_SIZE);
         let mut edges = Vec::<Edges>::with_capacity(EXPECTED_MIN_SIZE);
@@ -185,7 +198,7 @@ impl EDT {
 
         let mut in_adj_degenerate_letter = false;
 
-        for c in eds.as_bytes() {
+        for c in eds {
             // automaton
             match c {
                 b'A' | b'T'|  b'C' | b'G' => {
@@ -245,7 +258,7 @@ impl EDT {
                 ( prev_char == Some(Char::Open) &&
                   current_char == Some(Char::Comma) ) ||
                     ( prev_char == Some(Char::Comma) &&
-                        current_char == Some(Char::Comma) ) ||
+                      current_char == Some(Char::Comma) ) ||
                     ( prev_char == Some(Char::Comma) &&
                       current_char == Some(Char::Close) )
             };
@@ -267,7 +280,7 @@ impl EDT {
             };
 
             let is_adjacent_degenerate_letter = || -> bool {
-                    prev_char == Some(Char::Close) && current_char == Some(Char::Open)
+                prev_char == Some(Char::Close) && current_char == Some(Char::Open)
             };
 
             let is_end_of_adjacent_degenerate_letter = |in_adj_degenerate_letter: bool| -> bool {
@@ -291,7 +304,7 @@ impl EDT {
             let is_solid_string_start = || -> bool {
                 // avoids the case of two degenerate letters
                 (prev_char == Some(Char::Close) && current_char == Some(Char::Nucleotide)) ||
-                    // initial solid string
+                // initial solid string
                     (data.len() == 0 &&
                      current_char == Some(Char::Nucleotide) &&
                      current_letter == Some(Letter::Solid))
@@ -299,8 +312,8 @@ impl EDT {
 
             let is_first_char_in_leading_solid_string = || -> bool {
                 data.len() == 0 &&
-                 current_char == Some(Char::Nucleotide) &&
-                 current_letter == Some(Letter::Solid)
+                    current_char == Some(Char::Nucleotide) &&
+                    current_letter == Some(Letter::Solid)
             };
 
             // continuing a solid string
@@ -348,11 +361,11 @@ impl EDT {
 
             /*
             if is_solid_end() {
-                match solid_end.as_mut() {
-                    None => { solid_end = Some(size) },
-                    _ => {},
-                };
-            }
+            match solid_end.as_mut() {
+            None => { solid_end = Some(size) },
+            _ => {},
+        };
+        }
              */
 
 
@@ -785,7 +798,7 @@ mod tests {
             let start_g = HashSet::new();
             assert_eq!(*edt.get_start_indices(b'G'), start_g);
         }
-        }
+    }
     mod offsets {
         use super::super::*;
 
@@ -833,8 +846,6 @@ mod tests {
 
             let expected = Vec::from([(0,2), (6, 8), (12, 14)]);
             assert_eq!(edt.solid_strings, expected);
-
-
         }
 
     }
