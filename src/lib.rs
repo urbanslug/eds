@@ -1,9 +1,7 @@
 /*!
 # EDS
 
-EDS parser
-
-Parse an EDS into a DAG of its characters.
+EDT parser
 
 Degenerate letters are between brackets.
 Individual seeds are separated by commas.
@@ -11,7 +9,7 @@ Empty seeds are allowed
 `AT{TCC,AG,C,}AA`
 
 Generate EDS from fasta file and VCF
-[https://github.com/webmasterar/edso]()
+[https://github.com/urbanslug/aedso]()
 
 Generate random EDS
 [https://github.com/webmasterar/EDSRand]()
@@ -38,9 +36,11 @@ assert_eq!(edt[( edt.size() as usize - 1) ], b'A');
 ```
 
  */
+use coitrees::IntervalNode;
+use std::collections::{HashMap, HashSet};
+use std::fmt::{self, Display};
 use std::fs;
 use std::ops::Index;
-use std::collections::HashSet;
 
 // Minimum number of chars it can hold without re-allocating
 // assume small viral pan-genome (50k)
@@ -68,7 +68,7 @@ impl Edges {
 }
 
 /// A letter in the EDT. It can either be degenerate or solid
-#[derive(Debug, PartialEq, Copy,  Clone)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 enum Letter {
     Solid,
     Degenerate,
@@ -80,12 +80,12 @@ enum Letter {
 /// , a comma to separate degenerate letters
 /// { an open curly bracket to start a degenerate letter
 /// } a closed curly bracket to end a degenerate letter
-#[derive(Debug, PartialEq, Copy,  Clone)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 enum Char {
     Nucleotide,
     Comma,
     Open,
-    Close
+    Close,
 }
 
 #[derive(Debug)]
@@ -128,7 +128,8 @@ impl EDT {
     #[allow(unused_assignments)]
     pub fn from_file(file_path: &str) -> Self {
         // TODO: read line by line?
-        let data = fs::read(file_path).unwrap_or_else(|_| panic!("Unable to read file {}", file_path));
+        let data =
+            fs::read(file_path).unwrap_or_else(|_| panic!("Unable to read file {}", file_path));
         EDT::from_u8_slice(&data)
     }
 
@@ -157,11 +158,11 @@ impl EDT {
         let mut set_lookup_index = |c: &u8, size: u32| {
             let mut lookup_index: usize = 0;
             match *c {
-                b'A' => {},
+                b'A' => {}
                 b'T' => lookup_index = 1,
                 b'C' => lookup_index = 2,
                 b'G' => lookup_index = 3,
-                _ => panic!()
+                _ => panic!(),
             };
 
             start_indices[lookup_index].insert(size);
@@ -203,7 +204,7 @@ impl EDT {
         for c in eds {
             // automaton
             match c {
-                b'A' | b'T'|  b'C' | b'G' => {
+                b'A' | b'T' | b'C' | b'G' => {
                     prev_char = current_char;
                     prev_letter = current_letter;
 
@@ -212,20 +213,20 @@ impl EDT {
                         // we started at a solid string
                         current_letter = Some(Letter::Solid);
                     }
-                },
+                }
 
                 b',' => {
                     // does not update the letter
                     prev_char = current_char;
                     current_char = Some(Char::Comma);
-                },
+                }
                 b'{' => {
                     prev_char = current_char;
                     prev_letter = current_letter;
 
                     current_char = Some(Char::Open);
                     current_letter = Some(Letter::Degenerate);
-                },
+                }
 
                 b'}' => {
                     prev_char = current_char;
@@ -240,55 +241,42 @@ impl EDT {
                     continue;
                 }
 
-                _ => panic!("Malformed EDS {}", *c as char)
+                _ => panic!("Malformed EDS {}", *c as char),
             }
 
             // --------------------------
             // Inside a degenerate letter
             // --------------------------
-            let is_seed_start = || -> bool {
-                prev_char == Some(Char::Open) ||
-                    prev_char == Some(Char::Comma)
-            };
+            let is_seed_start =
+                || -> bool { prev_char == Some(Char::Open) || prev_char == Some(Char::Comma) };
 
-            let is_seed_stop = || -> bool {
-                current_char == Some(Char::Close) ||
-                    prev_char == Some(Char::Comma)
-            };
+            let is_seed_stop =
+                || -> bool { current_char == Some(Char::Close) || prev_char == Some(Char::Comma) };
 
             let found_empty_seed = || -> bool {
-                ( prev_char == Some(Char::Open) &&
-                  current_char == Some(Char::Comma) ) ||
-                    ( prev_char == Some(Char::Comma) &&
-                      current_char == Some(Char::Comma) ) ||
-                    ( prev_char == Some(Char::Comma) &&
-                      current_char == Some(Char::Close) )
+                (prev_char == Some(Char::Open) && current_char == Some(Char::Comma))
+                    || (prev_char == Some(Char::Comma) && current_char == Some(Char::Comma))
+                    || (prev_char == Some(Char::Comma) && current_char == Some(Char::Close))
             };
 
             // continuing a seed
             let cont_seed = || -> bool {
-                current_letter == Some(Letter::Degenerate) &&
-                    prev_letter == Some(Letter::Degenerate) &&
-                    prev_char == Some(Char::Nucleotide) &&
-                    current_char == Some(Char::Nucleotide)
+                current_letter == Some(Letter::Degenerate)
+                    && prev_letter == Some(Letter::Degenerate)
+                    && prev_char == Some(Char::Nucleotide)
+                    && current_char == Some(Char::Nucleotide)
             };
 
-            let is_degenerate_letter_start = || -> bool {
-                current_char == Some(Char::Open)
-            };
+            let is_degenerate_letter_start = || -> bool { current_char == Some(Char::Open) };
 
-            let is_degenerate_letter_end = || -> bool {
-                current_char == Some(Char::Close)
-            };
+            let is_degenerate_letter_end = || -> bool { current_char == Some(Char::Close) };
 
-            let is_adjacent_degenerate_letter = || -> bool {
-                prev_char == Some(Char::Close) && current_char == Some(Char::Open)
-            };
+            let is_adjacent_degenerate_letter =
+                || -> bool { prev_char == Some(Char::Close) && current_char == Some(Char::Open) };
 
             let is_end_of_adjacent_degenerate_letter = |in_adj_degenerate_letter: bool| -> bool {
                 is_seed_stop() && in_adj_degenerate_letter
             };
-
 
             // ------------
             // Solid string
@@ -298,8 +286,7 @@ impl EDT {
             // the end of a solid string
             // that is *not* at the very end of an EDS
             let is_solid_string_end = || -> bool {
-                prev_char == Some(Char::Nucleotide) &&
-                    current_char == Some(Char::Open)
+                prev_char == Some(Char::Nucleotide) && current_char == Some(Char::Open)
             };
 
             // the start of a solid string
@@ -313,16 +300,16 @@ impl EDT {
             };
 
             let is_first_char_in_leading_solid_string = || -> bool {
-                data.len() == 0 &&
-                    current_char == Some(Char::Nucleotide) &&
-                    current_letter == Some(Letter::Solid)
+                data.len() == 0
+                    && current_char == Some(Char::Nucleotide)
+                    && current_letter == Some(Letter::Solid)
             };
 
             // continuing a solid string
             let cont_solid = || -> bool {
-                current_letter == Some(Letter::Solid) &&
-                    prev_letter == Some(Letter::Solid) &&
-                    prev_char == Some(Char::Nucleotide)
+                current_letter == Some(Letter::Solid)
+                    && prev_letter == Some(Letter::Solid)
+                    && prev_char == Some(Char::Nucleotide)
             };
 
             // ----------------
@@ -331,7 +318,9 @@ impl EDT {
 
             if is_seed_start() {
                 match seed_starts.as_mut() {
-                    Some(s) => { s.insert(size); },
+                    Some(s) => {
+                        s.insert(size);
+                    }
                     _ => {
                         let mut s = HashSet::<u32>::new();
                         s.insert(size);
@@ -343,7 +332,9 @@ impl EDT {
             if is_seed_stop() {
                 let seed_stop_idx = size - 1;
                 match seed_stops.as_mut() {
-                    Some(s) => { s.insert(seed_stop_idx); },
+                    Some(s) => {
+                        s.insert(seed_stop_idx);
+                    }
                     _ => {
                         let mut s = HashSet::<u32>::new();
                         s.insert(seed_stop_idx);
@@ -362,19 +353,17 @@ impl EDT {
             }
 
             /*
-            if is_solid_end() {
-            match solid_end.as_mut() {
-            None => { solid_end = Some(size) },
-            _ => {},
-        };
-        }
-             */
-
-
+                if is_solid_end() {
+                match solid_end.as_mut() {
+                None => { solid_end = Some(size) },
+                _ => {},
+            };
+            }
+                 */
 
             if is_solid_string_end() {
-                solid_string_end = Some(size-1);
-                solid_end = Some(size-1);
+                solid_string_end = Some(size - 1);
+                solid_end = Some(size - 1);
             }
 
             if is_solid_string_start() {
@@ -390,13 +379,13 @@ impl EDT {
                 in_adj_degenerate_letter = true;
             }
 
-
             // TODO: improve this
             let mut update_offsets = || {
                 if is_degenerate_letter_end() {
-                    degenerate_letters.push(
-                        (degenerate_letter_start.unwrap() as usize, degenerate_letter_end.unwrap() as usize)
-                    );
+                    degenerate_letters.push((
+                        degenerate_letter_start.unwrap() as usize,
+                        degenerate_letter_end.unwrap() as usize,
+                    ));
 
                     degenerate_letter_start = None;
                     degenerate_letter_end = None;
@@ -404,11 +393,12 @@ impl EDT {
 
                 if is_solid_string_end() {
                     if solid_string_start.is_none() {
-                        solid_strings.push((0, solid_string_end.unwrap() as usize + 1) )
+                        solid_strings.push((0, solid_string_end.unwrap() as usize + 1))
                     } else {
-                        solid_strings.push(
-                            (solid_string_start.unwrap() as usize, solid_string_end.unwrap() as usize + 1)
-                        )
+                        solid_strings.push((
+                            solid_string_start.unwrap() as usize,
+                            solid_string_end.unwrap() as usize + 1,
+                        ))
                     }
 
                     solid_string_start = None;
@@ -418,7 +408,6 @@ impl EDT {
 
             // update edges
             let mut update_edges = || {
-
                 // eprintln!("{} {} {}", *c as char, size, is_solid_string_start());
 
                 // no need to check that the current char is a nucleotide
@@ -436,7 +425,7 @@ impl EDT {
                     edges[prev].1.insert(size);
 
                     // set the current incoming edges
-                    edges[curr].0.insert(size-1);
+                    edges[curr].0.insert(size - 1);
                 }
 
                 if is_solid_string_start() {
@@ -446,8 +435,8 @@ impl EDT {
                     }
 
                     // add an edge between the two adj solid strings
-                    if contains_empty_seed && solid_string_count > 1 && is_solid_string_start()  {
-                        let from = solid_end.unwrap_or_else(|| panic!("{}", size) );
+                    if contains_empty_seed && solid_string_count > 1 && is_solid_string_start() {
+                        let from = solid_end.unwrap_or_else(|| panic!("{}", size));
                         let to_idx = size as usize;
                         let from_idx = from as usize;
                         edges[from_idx].1.insert(size);
@@ -459,10 +448,12 @@ impl EDT {
                         match seed_starts.as_ref() {
                             Some(s) => {
                                 for i in s {
-                                    edges[*i as usize].0.insert(solid_end.expect(&format!("{size}")));
+                                    edges[*i as usize]
+                                        .0
+                                        .insert(solid_end.expect(&format!("{size}")));
                                     edges[solid_end.unwrap() as usize].1.insert(*i);
                                 }
-                            },
+                            }
                             _ => {}
                         }
                     }
@@ -474,7 +465,7 @@ impl EDT {
                                 edges[*i as usize].1.insert(size);
                                 edges[size as usize].0.insert(*i);
                             }
-                        },
+                        }
                         _ => {}
                     }
 
@@ -494,18 +485,17 @@ impl EDT {
                         match seed_starts.as_ref() {
                             Some(seed_starts_) => {
                                 for seed_start in seed_starts_ {
-                                    edges[*seed_start as usize].0.insert(solid_end.expect(&format!("{size}")));
+                                    edges[*seed_start as usize]
+                                        .0
+                                        .insert(solid_end.expect(&format!("{size}")));
                                     edges[solid_end.unwrap() as usize].1.insert(*seed_start);
                                 }
-                            },
+                            }
                             _ => {}
                         }
                     }
 
-
-                    if prev_seed_stops.is_some() {
-
-                    }
+                    if prev_seed_stops.is_some() {}
 
                     prev_seed_stops = seed_stops.clone();
                     solid_end = None;
@@ -527,12 +517,11 @@ impl EDT {
                                             edges[*seed_start as usize].0.insert(*seed_stop as u32);
                                             edges[*seed_stop as usize].1.insert(*seed_start as u32);
                                         }
-
-                                    },
+                                    }
                                     None => {}
                                 };
                             }
-                        },
+                        }
                         None => {}
                     }
 
@@ -558,13 +547,11 @@ impl EDT {
             if prev_letter.is_some() && prev_letter != current_letter {
                 length += 1;
             }
-
         }
 
         // add final offset info
         if current_char == Some(Char::Nucleotide) {
-            solid_strings.push (
-                (solid_string_start.unwrap() as usize, size as usize))
+            solid_strings.push((solid_string_start.unwrap() as usize, size as usize))
         }
 
         degenerate_letters.shrink_to_fit();
@@ -605,11 +592,11 @@ impl EDT {
     pub fn get_start_indices(&self, c: u8) -> &HashSet<u32> {
         let mut lookup_index: usize = 0;
         match c {
-            b'A' => {},
+            b'A' => {}
             b'T' => lookup_index = 1,
             b'C' => lookup_index = 2,
             b'G' => lookup_index = 3,
-            _ => panic!("EDT::get_start_indices expects A, T, C or G. Got {c}")
+            _ => panic!("EDT::get_start_indices expects A, T, C or G. Got {c}"),
         };
 
         &self.start_indices[lookup_index]
@@ -617,12 +604,12 @@ impl EDT {
 
     /// The outgoing edges from nucleotide at index idx
     pub fn from(&self, idx: usize) -> &HashSet<u32> {
-        &self.edges[idx].from()
+        self.edges[idx].from()
     }
 
     /// Indices of the nodes with edges coming into nucleotide at index idx
     pub fn to(&self, idx: usize) -> &HashSet<u32> {
-        &self.edges[idx].to()
+        self.edges[idx].to()
     }
 
     /// Total number of characters in the EDT
@@ -634,13 +621,168 @@ impl EDT {
     pub fn length(&self) -> u32 {
         self.length
     }
+
+    // fails when it starts at degenerate letter
+    fn index_degenerate_letters(
+        &self,
+    ) -> (
+        HashMap<(usize, usize), Vec<Vec<u8>>>,
+        coitrees::COITree<(), usize>,
+    ) {
+        // let degenerate_letters = edt.get_degenerate_letter_offsets();
+
+        let mut intervals: Vec<coitrees::IntervalNode<(), usize>> = Vec::new();
+        let mut index = HashMap::<(usize, usize), Vec<Vec<u8>>>::new();
+
+        for degenerate_letter @ (start, stop) in self.get_degenerate_letter_offsets() {
+            // source is the position of the last character of the preceding
+            // solid string
+            let source = start - 1;
+
+            // Current position on the degenerate letter
+            let mut b: usize = *start;
+
+            // The degenerate letter as a matrix
+            let mut variants: Vec<Vec<u8>> = Vec::new();
+            // each variant in a degenerate letter
+            let mut variant = Vec::<u8>::new();
+
+            // the length of the longest variant
+            let mut longest_variant_len: usize = 0;
+
+            while b < *stop {
+                variant.push(self[b]);
+
+                // if we are at the end of a variant
+                if self.from(b).contains(&(*stop as u32)) {
+                    if longest_variant_len < variant.len() {
+                        longest_variant_len = variant.len();
+                    }
+
+                    variants.push(variant.clone());
+
+                    variant.clear();
+                }
+
+                b += 1;
+            }
+
+            intervals.push(IntervalNode::new(
+                *start as i32,
+                *start as i32 + (longest_variant_len as i32),
+                (),
+            ));
+
+            // pad with epsilon
+            let variants: Vec<Vec<u8>> = variants
+                .iter()
+                .map(|variant: &Vec<u8>| {
+                    let mut variant = variant.clone();
+
+                    if variant.len() < longest_variant_len {
+                        while variant.len() < longest_variant_len {
+                            variant.push(b'*');
+                        }
+                    }
+
+                    // eprintln!("{}", std::str::from_utf8(&variant).unwrap());
+                    variant
+                })
+                .collect();
+
+            index.insert(*degenerate_letter, variants);
+        }
+
+        (index, coitrees::COITree::new(intervals))
+    }
+
+    fn get_column(matrix: &Vec<Vec<u8>>, column: usize) -> Vec<u8> {
+        matrix.iter().map(|row: &Vec<u8>| row[column]).collect()
+    }
+
+    pub fn index_positions(&self) -> Vec<Vec<u8>> {
+        let max = self.size();
+        let mut indexed_edt: Vec<Vec<u8>> = Vec::new();
+
+        let degenerate_letters = self.get_degenerate_letter_offsets();
+        let solid_string_offsets = self.get_solid_string_offsets();
+
+        let (index, interval_tree) = self.index_degenerate_letters();
+
+        let mut lengths = Vec::<(usize, usize, u8, Option<usize>)>::new();
+        for (start, stop) in solid_string_offsets {
+            lengths.push((*start as usize, stop - start, b's', None));
+        }
+
+        for ((start, stop), val) in index.iter() {
+            lengths.push((*start as usize, val[0].len(), b'd', Some(*stop as usize)));
+        }
+
+        lengths.sort_by_key(|k| k.0);
+
+        for (start, length, t, stop) in &lengths {
+            // eprintln!("{} {} {}", start, length, *t as char);
+            if *t == b's' {
+                for pos in *start..*start + *length {
+                    // eprintln!("{}", pos);
+                    indexed_edt.push(Vec::from([self[pos]]));
+                }
+            } else {
+                let matrix = index.get(&(*start, stop.unwrap())).unwrap();
+                for col in 0..*length {
+                    let v = EDT::get_column(&matrix, col);
+                    indexed_edt.push(v);
+                }
+            }
+        }
+
+        indexed_edt
+    }
 }
 
 impl Index<usize> for EDT {
     type Output = u8;
 
+    /// index the underlying vector
     fn index(&self, idx: usize) -> &Self::Output {
         &self.data[idx]
+    }
+}
+
+impl Display for EDT {
+    // Is broken by empty letters
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let index: Vec<Vec<u8>> = self.index_positions();
+        let tlen = index.len();
+        let mut lines: Vec<Vec<u8>> = Vec::new();
+
+        let empty_line = vec![b' '; tlen];
+        let mut row = 0;
+        loop {
+            let mut line = Vec::<u8>::with_capacity(tlen);
+            for col in 0..tlen {
+                match index[col].get(row) {
+                    Some(c) => line.push(*c),
+                    None => line.push(b' '),
+                }
+            }
+
+            if line == empty_line {
+                break;
+            } else {
+                lines.push(line);
+            }
+
+            row += 1;
+        }
+
+        let s: String = lines
+            .iter()
+            .map(|e| String::from(std::str::from_utf8(e).unwrap()))
+            .collect::<Vec<String>>()
+            .join("\n");
+
+        write!(f, "{}", s)
     }
 }
 
@@ -722,7 +864,6 @@ mod tests {
 
         #[test]
         fn test_start_solid() {
-
             // starts with solid string
             let ed_string = "AT{TCC,AG,C}AA";
             let edt = EDT::from_str(ed_string);
@@ -761,7 +902,7 @@ mod tests {
             // dbg!(edt[5] as char, edt.edges);
             assert_eq!(*edt.from(5), out_edges);
 
-            let in_edges = HashSet::from([5,8,9]);
+            let in_edges = HashSet::from([5, 8, 9]);
             // assert_eq!(*edt.to(10), in_edges);
 
             let ed_string = "ATCGAAT{C,A}GAT{C,CATGC,,A}GA";
@@ -787,14 +928,13 @@ mod tests {
 
             assert_eq!(edt[0], b'A');
             assert_eq!(edt[5], b'C');
-            assert_eq!(edt[( edt.size() as usize - 1) ], b'A');
+            assert_eq!(edt[(edt.size() as usize - 1)], b'A');
         }
 
         #[test]
         fn test_find_start_indices() {
             let ed_string = "AT{TCC,C,}AA";
             let edt = EDT::from_str(ed_string);
-
 
             let start_a = HashSet::from([0, 6, 7]);
             assert_eq!(*edt.get_start_indices(b'A'), start_a);
@@ -835,22 +975,43 @@ mod tests {
             let ed_string = "{CAT,C,}AT{TCC,C,}AA";
             let edt = EDT::from_str(ed_string);
 
-            let expected = Vec::from([(4, 6), (10,12)]);
+            let expected = Vec::from([(4, 6), (10, 12)]);
             assert_eq!(edt.solid_strings, expected);
 
             let ed_string = "AC{CAT,C,}AT{TCC,C,}AA";
             let edt = EDT::from_str(ed_string);
 
-            let expected = Vec::from([(0,2), (6,8), (12, 14)]);
+            let expected = Vec::from([(0, 2), (6, 8), (12, 14)]);
             assert_eq!(edt.solid_strings, expected);
-
 
             let ed_string = "AC{CAT,C,}AT{TCC,C,}AA{CGA,TC}";
             let edt = EDT::from_str(ed_string);
 
-            let expected = Vec::from([(0,2), (6, 8), (12, 14)]);
+            let expected = Vec::from([(0, 2), (6, 8), (12, 14)]);
             assert_eq!(edt.solid_strings, expected);
         }
+    }
 
+    // positions and offsets
+    mod indexing {
+        use super::super::*;
+
+        // find char approximate char positions
+        // echo "{CAT,C,}AT{TCC,C,}AA" | grep -aob '}'
+
+        #[test]
+        fn test_index_positions() {
+            let ed_string = "A{CAT,GA,T}AT{TCC,C}AA";
+            let edt = EDT::from_str(ed_string);
+
+            let positions: Vec<String> = edt
+                .index_positions()
+                .iter()
+                .map(|e| String::from(std::str::from_utf8(e).unwrap()))
+                .collect();
+
+            eprintln!("{}", edt);
+            eprintln!("{:?}", positions);
+        }
     }
 }
