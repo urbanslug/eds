@@ -1,4 +1,6 @@
 /*!
+# EDS
+
 EDS parser
 
 Parse an EDS into a DAG of its characters.
@@ -618,15 +620,17 @@ impl EDT {
         &self.edges[idx].from()
     }
 
-    /// indices of the nodes with edges coming into nucleotide at index idx
+    /// Indices of the nodes with edges coming into nucleotide at index idx
     pub fn to(&self, idx: usize) -> &HashSet<u32> {
         &self.edges[idx].to()
     }
 
+    /// Total number of characters in the EDT
     pub fn size(&self) -> u32 {
         self.size
     }
 
+    /// total number of solid strings plus the total number of degenerate letters
     pub fn length(&self) -> u32 {
         self.length
     }
