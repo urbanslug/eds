@@ -700,6 +700,8 @@ impl EDT {
         matrix.iter().map(|row: &Vec<u8>| row[column]).collect()
     }
 
+    /// Indexes vertically as if running a window of size 1 along the printable
+    /// EDT
     pub fn index_positions(&self) -> Vec<Vec<u8>> {
         let max = self.size();
         let mut indexed_edt: Vec<Vec<u8>> = Vec::new();
@@ -751,6 +753,16 @@ impl Index<usize> for EDT {
 
 impl Display for EDT {
     // Is broken by empty letters
+    /// prints
+    /// ```
+    /// "A{CAT,GA,T}AT{TCC,C}AA"
+    /// ```
+    /// as
+    /// ```
+    /// ACATATTCCAA
+    ///  GA*  C**
+    ///  T**
+    /// ```
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let index: Vec<Vec<u8>> = self.index_positions();
         let tlen = index.len();
