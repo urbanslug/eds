@@ -42,6 +42,9 @@ use std::fmt::{self, Display};
 use std::fs;
 use std::ops::Index;
 
+// ---------
+// Constants
+// ----------
 // Minimum number of chars it can hold without re-allocating
 // assume small viral pan-genome (50k)
 const EXPECTED_MIN_SIZE: usize = 50_000;
@@ -88,6 +91,181 @@ enum Char {
     Close,
 }
 
+pub struct Matrix {
+    pub data: Vec<Vec<u8>>,
+}
+
+impl Matrix {
+    pub fn from_file(file_path: &str) -> Self {
+        // TODO: read line by line?
+        let data =
+            fs::read(file_path).unwrap_or_else(|_| panic!("Unable to read file {}", file_path));
+        Self::from_u8_slice(&data)
+    }
+
+    pub fn from_str(eds: &str) -> Self {
+        Self::from_u8_slice(eds.as_bytes())
+    }
+
+    pub fn from_u8_slice(eds: &[u8]) -> Self {
+        let expected_p = 3_000; // exptect no seq to be over 3000 bases
+        let expected_z = 5; // expect a max of 5 variations
+
+        let col = Vec::<u8>::with_capacity(expected_z);
+        let mut data = vec![col; expected_p];
+
+        // State variables
+        let mut current_letter: Option<Letter> = None;
+        let mut current_char: Option<Char> = None;
+
+        let mut prev_letter: Option<Letter> = None;
+        let mut prev_char: Option<Char> = None;
+
+        let mut seed_starts: Option<HashSet<u32>> = None;
+        let mut seed_stops: Option<HashSet<u32>> = None;
+
+        let mut p = 0;
+        let mut z = 0;
+
+        for c in eds {
+            // automaton
+            match c {
+                b'A' | b'T' | b'C' | b'G' => {
+                    prev_char = current_char;
+                    prev_letter = current_letter;
+
+                    current_char = Some(Char::Nucleotide);
+                    if current_letter.is_none() {
+                        // we started at a solid string
+                        current_letter = Some(Letter::Solid);
+                    }
+                }
+
+                b',' => {
+                    // does not update the letter
+                    prev_char = current_char;
+                    current_char = Some(Char::Comma);
+                }
+                b'{' => {
+                    prev_char = current_char;
+                    prev_letter = current_letter;
+
+                    current_char = Some(Char::Open);
+                    current_letter = Some(Letter::Degenerate);
+                }
+
+                b'}' => {
+                    prev_char = current_char;
+                    prev_letter = current_letter;
+
+                    current_char = Some(Char::Close);
+                    current_letter = Some(Letter::Solid);
+                }
+
+                // handle whitespace
+                b'\t' | b'\n' | b' ' => {
+                    continue;
+                }
+
+                _ => panic!("Malformed EDS {}", *c as char),
+            }
+
+            // --------------------------
+            // Inside a degenerate letter
+            // --------------------------
+            let is_seed_start =
+                || -> bool { prev_char == Some(Char::Open) || prev_char == Some(Char::Comma) };
+
+            let is_seed_stop =
+                || -> bool { current_char == Some(Char::Close) || prev_char == Some(Char::Comma) };
+
+            let found_empty_seed = || -> bool {
+                (prev_char == Some(Char::Open) && current_char == Some(Char::Comma))
+                    || (prev_char == Some(Char::Comma) && current_char == Some(Char::Comma))
+                    || (prev_char == Some(Char::Comma) && current_char == Some(Char::Close))
+            };
+
+            // continuing a seed
+            let cont_seed = || -> bool {
+                current_letter == Some(Letter::Degenerate)
+                    && prev_letter == Some(Letter::Degenerate)
+                    && prev_char == Some(Char::Nucleotide)
+                    && current_char == Some(Char::Nucleotide)
+            };
+
+            let is_degenerate_letter_start = || -> bool { current_char == Some(Char::Open) };
+
+            let is_degenerate_letter_end = || -> bool { current_char == Some(Char::Close) };
+
+            let is_adjacent_degenerate_letter =
+                || -> bool { prev_char == Some(Char::Close) && current_char == Some(Char::Open) };
+
+            let is_end_of_adjacent_degenerate_letter = |in_adj_degenerate_letter: bool| -> bool {
+                is_seed_stop() && in_adj_degenerate_letter
+            };
+
+            // ------------
+            // Solid string
+            // ------------
+
+            // from the perspective of the solid string
+            // the end of a solid string
+            // that is *not* at the very end of an EDS
+            let is_solid_string_end = || -> bool {
+                prev_char == Some(Char::Nucleotide) && current_char == Some(Char::Open)
+            };
+
+            // the start of a solid string
+            let is_solid_string_start = || -> bool {
+                // avoids the case of two degenerate letters
+                (prev_char == Some(Char::Close) && current_char == Some(Char::Nucleotide)) ||
+                // initial solid string
+                    (data.len() == 0 &&
+                     current_char == Some(Char::Nucleotide) &&
+                     current_letter == Some(Letter::Solid))
+            };
+
+            let is_first_char_in_leading_solid_string = || -> bool {
+                data.len() == 0
+                    && current_char == Some(Char::Nucleotide)
+                    && current_letter == Some(Letter::Solid)
+            };
+
+            // continuing a solid string
+            let cont_solid = || -> bool {
+                current_letter == Some(Letter::Solid)
+                    && prev_letter == Some(Letter::Solid)
+                    && prev_char == Some(Char::Nucleotide)
+            };
+
+            // continuing a seed
+            let in_degenerate_letter = || -> bool {
+                current_letter == Some(Letter::Degenerate) && current_char == Some(Char::Nucleotide)
+            };
+
+            let in_solid_letter = || -> bool {
+                current_letter == Some(Letter::Solid) && current_char == Some(Char::Nucleotide)
+            };
+
+            // ------------
+            // Update State
+            // ------------
+            if in_solid_letter() {
+                data[p] = vec![*c];
+                p += 1;
+            }
+
+            if in_degenerate_letter() {
+                eprintln!("D");
+            }
+        }
+
+        data.truncate(p);
+
+        Self { data }
+    }
+}
+
 #[derive(Debug)]
 pub struct EDT {
     /// The chars of the EDT
@@ -125,7 +303,7 @@ impl EDT {
     // ----------
     // Methods
     // ----------
-    #[allow(unused_assignments)]
+
     pub fn from_file(file_path: &str) -> Self {
         // TODO: read line by line?
         let data =
@@ -133,7 +311,6 @@ impl EDT {
         EDT::from_u8_slice(&data)
     }
 
-    #[allow(unused_assignments)]
     pub fn from_str(eds: &str) -> Self {
         EDT::from_u8_slice(eds.as_bytes())
     }
@@ -1024,6 +1201,17 @@ mod tests {
 
             eprintln!("{}", edt);
             eprintln!("{:?}", positions);
+        }
+    }
+
+    mod matrix {
+        use super::super::*;
+
+        #[test]
+        fn test_adjacent_degenerate_letters() {
+            let ed_string = "A{T,G}{C,A}{T,A}TC";
+            let edt = Matrix::from_str(ed_string);
+            eprintln!("edt {:?}", edt.data);
         }
     }
 }
