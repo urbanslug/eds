@@ -47,7 +47,9 @@ use std::ops::Index;
 // ----------
 // Minimum number of chars it can hold without re-allocating
 // assume small viral pan-genome (50k)
-const EXPECTED_MIN_SIZE: usize = 50_000;
+const EXPECTED_MIN_SIZE: usize = 50_000_000;
+const WILDCARD: u8 = b'*';
+const PAD: bool = true;
 
 /// 0 => from (incoming nodes)
 /// 1 => to (outgoing nodes)
@@ -93,6 +95,27 @@ enum Char {
 
 pub struct Matrix {
     pub data: Vec<Vec<u8>>,
+
+    /// deepest z
+    pub z: usize,
+
+    /// diameter of the graph or length of longest string in the possibility set
+    pub p: usize,
+
+    /// size (N)
+    length: usize,
+
+    /// length (n)
+    size: usize,
+
+    /// An array of sets of start indices
+    /// Start indices for each nucleotide
+    /// Index of where each char starts
+    /// A = 0 T = 1 C = 2 G = 3
+    start_indices: [HashSet<usize>; 5],
+
+    solid_strings: Vec<(usize, usize)>,
+    degenerate_letters: Vec<(usize, usize)>,
 }
 
 impl Matrix {
@@ -108,7 +131,7 @@ impl Matrix {
     }
 
     pub fn from_u8_slice(eds: &[u8]) -> Self {
-        let expected_p = 3_000; // exptect no seq to be over 3000 bases
+        let expected_p = 3_000; // expect no seq to be over 3000 bases
         let expected_z = 5; // expect a max of 5 variations
 
         let col = Vec::<u8>::with_capacity(expected_z);
@@ -121,11 +144,46 @@ impl Matrix {
         let mut prev_letter: Option<Letter> = None;
         let mut prev_char: Option<Char> = None;
 
-        let mut seed_starts: Option<HashSet<u32>> = None;
-        let mut seed_stops: Option<HashSet<u32>> = None;
-
         let mut p = 0;
+        let mut p_prime = 0;
+        let mut max_p_prime = 0;
         let mut z = 0;
+        let mut z_prime = 0;
+
+        let mut length = 0;
+        let mut size = 0;
+
+        let mut solid_strings = Vec::<(usize, usize)>::with_capacity(EXPECTED_MIN_SIZE);
+        let mut degenerate_letters = Vec::<(usize, usize)>::with_capacity(EXPECTED_MIN_SIZE);
+
+        let mut solid_string_start: usize = 0 as usize;
+        let mut solid_string_end: usize = 0;
+        let mut degenerate_letter_start: usize = 0;
+        let mut degenerate_letter_end: usize = 0;
+
+        // A lookup for start indices of each nucleotide
+        let mut start_indices = [
+            HashSet::<usize>::new(), // A
+            HashSet::<usize>::new(), // T
+            HashSet::<usize>::new(), // C
+            HashSet::<usize>::new(), // G
+            HashSet::<usize>::new(), // epsilon/wildcard
+        ];
+
+        // Set the character and position of the nucleotide
+        let mut set_lookup_index = |c: &u8, p: usize| {
+            let mut lookup_index: usize = 0;
+            match *c {
+                b'A' => {}
+                b'T' => lookup_index = 1,
+                b'C' => lookup_index = 2,
+                b'G' => lookup_index = 3,
+                b'*' => lookup_index = 4,
+                _ => panic!(),
+            };
+
+            start_indices[lookup_index].insert(p);
+        };
 
         for c in eds {
             // automaton
@@ -170,47 +228,6 @@ impl Matrix {
                 _ => panic!("Malformed EDS {}", *c as char),
             }
 
-            // --------------------------
-            // Inside a degenerate letter
-            // --------------------------
-            let is_seed_start =
-                || -> bool { prev_char == Some(Char::Open) || prev_char == Some(Char::Comma) };
-
-            let is_seed_stop =
-                || -> bool { current_char == Some(Char::Close) || prev_char == Some(Char::Comma) };
-
-            let found_empty_seed = || -> bool {
-                (prev_char == Some(Char::Open) && current_char == Some(Char::Comma))
-                    || (prev_char == Some(Char::Comma) && current_char == Some(Char::Comma))
-                    || (prev_char == Some(Char::Comma) && current_char == Some(Char::Close))
-            };
-
-            // continuing a seed
-            let cont_seed = || -> bool {
-                current_letter == Some(Letter::Degenerate)
-                    && prev_letter == Some(Letter::Degenerate)
-                    && prev_char == Some(Char::Nucleotide)
-                    && current_char == Some(Char::Nucleotide)
-            };
-
-            let is_degenerate_letter_start = || -> bool { current_char == Some(Char::Open) };
-
-            let is_degenerate_letter_end = || -> bool { current_char == Some(Char::Close) };
-
-            let is_adjacent_degenerate_letter =
-                || -> bool { prev_char == Some(Char::Close) && current_char == Some(Char::Open) };
-
-            let is_end_of_adjacent_degenerate_letter = |in_adj_degenerate_letter: bool| -> bool {
-                is_seed_stop() && in_adj_degenerate_letter
-            };
-
-            // ------------
-            // Solid string
-            // ------------
-
-            // from the perspective of the solid string
-            // the end of a solid string
-            // that is *not* at the very end of an EDS
             let is_solid_string_end = || -> bool {
                 prev_char == Some(Char::Nucleotide) && current_char == Some(Char::Open)
             };
@@ -225,44 +242,194 @@ impl Matrix {
                      current_letter == Some(Letter::Solid))
             };
 
-            let is_first_char_in_leading_solid_string = || -> bool {
-                data.len() == 0
-                    && current_char == Some(Char::Nucleotide)
-                    && current_letter == Some(Letter::Solid)
-            };
-
-            // continuing a solid string
-            let cont_solid = || -> bool {
-                current_letter == Some(Letter::Solid)
-                    && prev_letter == Some(Letter::Solid)
-                    && prev_char == Some(Char::Nucleotide)
-            };
-
             // continuing a seed
             let in_degenerate_letter = || -> bool {
-                current_letter == Some(Letter::Degenerate) && current_char == Some(Char::Nucleotide)
+                current_letter == Some(Letter::Degenerate)
+                    || current_char == Some(Char::Open)
+                    || current_char == Some(Char::Close)
             };
 
             let in_solid_letter = || -> bool {
                 current_letter == Some(Letter::Solid) && current_char == Some(Char::Nucleotide)
             };
 
+            if is_solid_string_start() {
+                solid_string_start = p;
+            }
+
+            if is_solid_string_end() {
+                solid_string_end = p;
+                solid_strings.push((solid_string_start, solid_string_end));
+            }
+
             // ------------
             // Update State
             // ------------
             if in_solid_letter() {
                 data[p] = vec![*c];
+                set_lookup_index(c, p);
                 p += 1;
+                size += 1;
+                length += 1;
             }
 
             if in_degenerate_letter() {
-                eprintln!("D");
+                match (prev_char, current_char) {
+                    // Case 1
+                    // leading or ... empty degenerate letter
+                    (Some(Char::Comma), Some(Char::Comma))
+                    | (Some(Char::Open), Some(Char::Comma)) => {
+                        // entire empty
+                        p_prime = p;
+                        z_prime += 1;
+                    }
+
+                    // Case 2
+                    (Some(Char::Open), Some(Char::Nucleotide)) => {
+                        p_prime = p;
+
+                        match data.get_mut(p_prime) {
+                            Some(col) => col.push(*c),
+                            _ => data[p_prime] = vec![*c],
+                        }
+
+                        set_lookup_index(c, p_prime);
+
+                        p_prime += 1;
+                        size += 1;
+                    }
+                    // Case 3
+                    (_, Some(Char::Comma)) | (_, Some(Char::Open)) => {
+                        z_prime += 1;
+                        p_prime = p;
+                    }
+                    // Case 4
+                    (_, Some(Char::Close)) => {
+                        // also handles trailing empty degenerate letter
+                        // thanks to case 3
+
+                        if PAD {
+                            for col in p..p + max_p_prime {
+                                for row in 0..z_prime {
+                                    match data[col].get(row) {
+                                        None => {
+                                            data[col].push(WILDCARD);
+                                            set_lookup_index(&b'*', col);
+                                        }
+                                        Some(_) => {}
+                                    };
+                                }
+                            }
+                        }
+
+                        if z_prime > z {
+                            z = z_prime;
+                        }
+                        degenerate_letters.push((p, p + max_p_prime));
+                        z_prime = 0;
+                        p = p + max_p_prime;
+                        p_prime = 0;
+                        max_p_prime = 0;
+                        length += 1;
+
+                        continue; // leave early
+                    }
+                    // Case 5
+                    (_, Some(Char::Nucleotide)) => {
+                        match data.get_mut(p_prime) {
+                            Some(col) => col.push(*c),
+                            _ => data[p_prime] = vec![*c],
+                        }
+                        set_lookup_index(c, p_prime);
+                        p_prime += 1;
+                        size += 1;
+                    }
+                    // case 6
+                    _ => panic!("Unexpected case in degenerate letter"),
+                }
+
+                if p_prime - p > max_p_prime {
+                    max_p_prime = p_prime - p
+                }
             }
         }
 
-        data.truncate(p);
+        // add final offset info
+        if current_char == Some(Char::Nucleotide) {
+            solid_strings.push((solid_string_start, p));
+        }
 
-        Self { data }
+        data.truncate(p);
+        degenerate_letters.shrink_to_fit();
+        solid_strings.shrink_to_fit();
+        data.shrink_to_fit();
+
+        Self {
+            data,
+            z,
+            p,
+            size,
+            length,
+            start_indices,
+            degenerate_letters,
+            solid_strings,
+        }
+    }
+
+    pub fn print_stats(&self) -> String {
+        format!(
+            "z={} p={} length={} size={}\n\
+             solid strings={:?}\n\
+             degenerate letters={:?}\n\
+             start indices={{\n\
+             \tA={:?}\n\
+             \tT={:?}\n\
+             \tC={:?}\n\
+             \tG={:?}\n\
+             \t*={:?}\n\
+             }}",
+            self.z,
+            self.p,
+            self.length,
+            self.size,
+            self.solid_strings,
+            self.degenerate_letters,
+            self.start_indices[0],
+            self.start_indices[1],
+            self.start_indices[2],
+            self.start_indices[3],
+            self.start_indices[4],
+        )
+    }
+}
+
+impl Display for Matrix {
+    /// prints
+    /// ```
+    /// "A{CAT,GA,T}AT{TCC,C}AA"
+    /// ```
+    /// as
+    /// ```
+    /// ACATATTCCAA
+    ///  GA*  C**
+    ///  T**
+    /// ```
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let rows = self.z;
+        let cols = self.p;
+
+        let mut s = String::new();
+        for row in 0..rows {
+            for col in 0..cols {
+                match self.data[col].get(row) {
+                    Some(r) => s.push(*r as char),
+                    _ => s.push(' '),
+                };
+            }
+            s.push('\n');
+        }
+
+        write!(f, "{}", s)
     }
 }
 
@@ -1211,7 +1378,33 @@ mod tests {
         fn test_adjacent_degenerate_letters() {
             let ed_string = "A{T,G}{C,A}{T,A}TC";
             let edt = Matrix::from_str(ed_string);
-            eprintln!("edt {:?}", edt.data);
+            eprintln!("{}", edt);
+            eprintln!("{}\n", edt.print_stats());
+
+            let ed_string = "TTATCTAC{CGCC,G}AC{CAAG,TC}G{C,G}AC{T,CGTA}{GTGT,G}\
+                             TTCTC{GAAA,TG}ATATACC{AA,CG}GGTTCA{TAGC,GATT}CTTC\
+                             {A,T}TAGGACTTCAGGGT{G,A}CAATT";
+            let edt = Matrix::from_str(ed_string);
+            eprintln!("{}", edt);
+            eprintln!("{}\n", edt.print_stats());
+
+            // space
+            let ed_string = "GA{T,C}ATT{T, ,G}ATC{,TGA,CA}GTA{GGCA,AGA,}CTT";
+            let edt = Matrix::from_str(ed_string);
+            eprintln!("{}", edt);
+            eprintln!("{}\n", edt.print_stats());
+
+            let ed_string = "{TCGA,CTA,A}ATCGATGGG{T,C}AACTT{T,G}AG{G,T}CCGGTTTATAT\
+                             TGAT{T,C}CCTA{T,G}{T,A}{A,T}A{T,A}GGGGGTCCTTTGCTTGCTGT\
+                             TG{A,G}CTC{T,G}TGAGTGAGCTTGCGAGATA";
+            let edt = Matrix::from_str(ed_string);
+            eprintln!("{}", edt);
+            eprintln!("{}\n", edt.print_stats());
+
+            let ed_string = "{TCGA,CTA,A}ATCGATGGG{T,C}";
+            let edt = Matrix::from_str(ed_string);
+            eprintln!("{}", edt);
+            eprintln!("{}\n", edt.print_stats());
         }
     }
 }
