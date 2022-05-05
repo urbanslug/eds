@@ -891,41 +891,4 @@ mod tests {
             assert_eq!(*edt.outgoing([5, 1]), out_edges);
         }
     }
-
-    mod matrix {
-        use super::super::*;
-
-        #[test]
-        fn test_adjacent_degenerate_letters() {
-            let ed_string = "A{T,G}{C,A}{T,A}TC";
-            let edt = EDT::from_str(ed_string);
-            eprintln!("{}", edt);
-            eprintln!("{}\n", edt.print_stats());
-
-            let ed_string = "TTATCTAC{CGCC,G}AC{CAAG,TC}G{C,G}AC{T,CGTA}{GTGT,G}\
-                             TTCTC{GAAA,TG}ATATACC{AA,CG}GGTTCA{TAGC,GATT}CTTC\
-                             {A,T}TAGGACTTCAGGGT{G,A}CAATT";
-            let edt = EDT::from_str(ed_string);
-            eprintln!("{}", edt);
-            eprintln!("{}\n", edt.print_stats());
-
-            // space
-            let ed_string = "GA{T,C}ATT{T, ,G}ATC{,TGA,CA}GTA{GGCA,AGA,}CTT";
-            let edt = EDT::from_str(ed_string);
-            eprintln!("{}", edt);
-            eprintln!("{}\n", edt.print_stats());
-
-            let ed_string = "{TCGA,CTA,A}ATCGATGGG{T,C}AACTT{T,G}AG{G,T}CCGGTTTATAT\
-                             TGAT{T,C}CCTA{T,G}{T,A}{A,T}A{T,A}GGGGGTCCTTTGCTTGCTGT\
-                             TG{A,G}CTC{T,G}TGAGTGAGCTTGCGAGATA";
-            let edt = EDT::from_str(ed_string);
-            eprintln!("{}", edt);
-            eprintln!("{}\n", edt.print_stats());
-
-            let ed_string = "{TCGA,CTA,A}ATCGATGGG{T,C}";
-            let edt = EDT::from_str(ed_string);
-            eprintln!("{}", edt);
-            eprintln!("{}\n", edt.print_stats());
-        }
-    }
 }
