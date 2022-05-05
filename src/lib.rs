@@ -14,38 +14,6 @@ Generate EDS from fasta file and VCF
 Generate random EDS
 [https://github.com/webmasterar/EDSRand]()
 
-```
-use eds::EDT;
-
-let ed_string = "AT{TCC,C,}AA";
-let edt = EDT::from_str(ed_string);
-
-// ---------------
-// Size and Length
-// ---------------
-assert_eq!(edt.size() as usize, 8);
-assert_eq!(edt.length() as usize, 5);
-
-// -----
-// Edges
-// -----
-// TODO: add
-
-// --------
-// Indexing
-// --------
-
-// 0123456
-// ATTCCAA
-//   C**
-//   ***
-
-
-assert_eq!(edt[0], vec![b'A']);
-assert_eq!(edt[2], vec![b'T', b'C',  b'*']);
-assert_eq!(edt[edt.p() - 1], vec![b'A']);
-```
-
  */
 
 use std::collections::HashSet;
@@ -351,8 +319,9 @@ impl EDT {
                 solid_strings.push((solid_string_start, solid_string_end));
             }
 
+            // ------------
             // Helpers
-
+            // ------------
             let find_non_epsilon =
                 |col: usize, row: usize, data: &Vec<Vec<Item>>| -> Option<Coordinate> {
                     // we get here if we have adj degenerate letters with epsilons
@@ -421,7 +390,7 @@ impl EDT {
                         p_prime = p;
                         let mut item = Item::new(c);
 
-                        if p > 0 {
+                        if p_prime > 0 {
                             let prev_col_index: usize = p_prime - 1;
                             let prev_col_len = data[prev_col_index].len();
 
@@ -430,7 +399,7 @@ impl EDT {
                                     if data[prev_col_index][row].base() != WILDCARD {
                                         Some([prev_col_index, row])
                                     } else {
-                                        find_non_epsilon(prev_col_index, row), &data
+                                        find_non_epsilon(prev_col_index, row, &data)
                                     }
                                 })
                                 .collect();
@@ -438,7 +407,7 @@ impl EDT {
 
                             for [col, row] in incoming {
                                 // No need to check for wildcard as it was checked by incoming
-                                data[col][row].add_edge(p_prime, 0, Edge::Outgoing);
+                                data[col][row].add_edge(p_prime, z_prime, Edge::Outgoing);
                             }
                         }
 
@@ -457,6 +426,7 @@ impl EDT {
                         z_prime += 1;
                         p_prime = p;
                     }
+
                     // Case 4
                     (_, Some(Char::Close)) => {
                         // also handles trailing empty degenerate letter
@@ -492,8 +462,8 @@ impl EDT {
                     (_, Some(Char::Nucleotide)) => {
                         let mut item = Item::new(c);
 
-                        if p > 0 {
-                            let prev_col_index: usize = p - 1;
+                        if p_prime > 0 {
+                            let prev_col_index: usize = p_prime - 1;
                             let prev_col_len = data[prev_col_index].len();
 
                             let incoming: HashSet<Coordinate> = (0..prev_col_len)
@@ -501,16 +471,14 @@ impl EDT {
                                     if data[prev_col_index][row].base() != WILDCARD {
                                         Some([prev_col_index, row])
                                     } else {
-                                        None
+                                        find_non_epsilon(prev_col_index, row, &data)
                                     }
                                 })
                                 .collect();
-                            item.add_edges(incoming, Edge::Incoming);
-
-                            for prev_item in data.get_mut(prev_col_index).unwrap() {
-                                if prev_item.base() != WILDCARD {
-                                    prev_item.add_edge(p, 0, Edge::Outgoing);
-                                }
+                            item.add_edges(incoming.clone(), Edge::Incoming);
+                            for [col, row] in incoming {
+                                // No need to check for wildcard as it was checked by incoming
+                                data[col][row].add_edge(p_prime, z_prime, Edge::Outgoing);
                             }
                         }
 
@@ -882,31 +850,25 @@ mod tests {
             let ed_string = "{CAT,C,}AT{TCC,C,}AA";
             let edt = EDT::from_str(ed_string);
 
-            // eprintln!("{}", edt);
-            // eprintln!("{:?}", edt);
-
             // solid
             let in_edges = HashSet::from([[8, 0]]);
             assert_eq!(*edt.incoming([9, 0]), in_edges);
 
-            let in_edges = HashSet::from([[7, 0], [7, 1], [7, 2]]);
-            eprintln!("{:?}", edt[8]);
+            let in_edges = HashSet::from([[7, 0], [5, 1], [4, 0]]);
             assert_eq!(*edt.incoming([8, 0]), in_edges);
 
             let in_edges = HashSet::from([[4, 0]]);
             assert_eq!(*edt.incoming([5, 0]), in_edges);
 
+            // degenerate
             let in_edges = HashSet::from([[4, 0]]);
             assert_eq!(*edt.incoming([5, 1]), in_edges);
 
             let in_edges = HashSet::from([]);
             assert_eq!(*edt.incoming([5, 2]), in_edges);
 
-            let in_edges = HashSet::from([[6, 0], [8, 1]]);
+            let in_edges = HashSet::from([[6, 0]]);
             assert_eq!(*edt.incoming([7, 0]), in_edges);
-
-            let in_edges = HashSet::from([[11, 1], [12, 1], [17, 0], [18, 0]]);
-            assert_eq!(*edt.incoming([19, 1]), in_edges);
         }
 
         #[test]
@@ -922,11 +884,11 @@ mod tests {
             assert_eq!(*edt.outgoing([8, 0]), out_edges);
 
             // degenerate
-            let out_edges = HashSet::from([[7, 1], [8, 1]]);
-            assert_eq!(*edt.outgoing([9, 0]), out_edges);
+            let out_edges = HashSet::from([[3, 0]]);
+            assert_eq!(*edt.outgoing([0, 1]), out_edges);
 
-            let out_edges = HashSet::from([[11, 1], [12, 1], [17, 0], [18, 0]]);
-            assert_eq!(*edt.outgoing([19, 1]), out_edges);
+            let out_edges = HashSet::from([[8, 0]]);
+            assert_eq!(*edt.outgoing([5, 1]), out_edges);
         }
     }
 
