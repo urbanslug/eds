@@ -111,11 +111,67 @@ impl Edges {
     }
 }
 
-/// The underlying Elastic Degenerate Text
-pub struct EDT {
-    pub data: Vec<Vec<u8>>,
+#[derive(Debug, Clone)]
+pub struct Item {
+    base: u8,
+    incoming: HashSet<Coordinate>,
+    outgoing: HashSet<Coordinate>,
+}
 
-    pub edges: Vec<Vec<Edges>>,
+pub enum Edge {
+    Incoming,
+    Outgoing,
+}
+
+impl Item {
+    pub fn new(base: &u8) -> Self {
+        Self {
+            base: *base,
+            outgoing: HashSet::<Coordinate>::new(),
+            incoming: HashSet::<Coordinate>::new(),
+        }
+    }
+
+    pub fn add_edge(&mut self, col: usize, row: usize, edge: Edge) -> Result<(), String> {
+        match edge {
+            Edge::Incoming => {
+                self.incoming.insert([col, row]);
+            }
+            Edge::Outgoing => {
+                self.outgoing.insert([col, row]);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn add_edges(&mut self, edges: HashSet<Coordinate>, edge: Edge) -> Result<(), String> {
+        let successful = match edge {
+            Edge::Incoming => edges
+                .iter()
+                .map(|e| self.incoming.insert(*e))
+                .fold(true, |acc, v| acc && v),
+            Edge::Outgoing => edges
+                .iter()
+                .map(|e| self.outgoing.insert(*e))
+                .fold(true, |acc, v| acc && v),
+        };
+
+        if successful {
+            Ok(())
+        } else {
+            Err(String::from("Fail"))
+        }
+    }
+
+    fn base(&self) -> u8 {
+        self.base
+    }
+}
+
+/// The underlying Elastic Degenerate Text
+#[derive(Debug)]
+pub struct EDT {
+    data: Vec<Vec<Item>>,
 
     /// deepest z
     z: usize,
@@ -152,7 +208,7 @@ impl EDT {
     }
 
     pub fn from_u8_slice(eds: &[u8]) -> Self {
-        let col = Vec::<u8>::with_capacity(EXPECTED_ROWS);
+        let col = Vec::<Item>::with_capacity(EXPECTED_ROWS);
         let mut data = vec![col; EXPECTED_COLS];
 
         let mut edges = Vec::<Vec<Edges>>::with_capacity(EXPECTED_COLS);
@@ -252,14 +308,10 @@ impl EDT {
 
             // reallocate the data vector
             if p >= data.len() - EXPECTED_COLS {
-                let col = Vec::<u8>::with_capacity(EXPECTED_ROWS);
+                let col = Vec::<Item>::with_capacity(EXPECTED_ROWS);
                 let limit = p * 2;
                 let data_slice = vec![col; limit];
                 data.extend_from_slice(&data_slice);
-
-                let edge = Vec::<Edges>::new();
-                let edge_slice = vec![edge.clone(); limit];
-                edges.extend_from_slice(&edge_slice);
             }
 
             // ---------------------------------
@@ -299,12 +351,53 @@ impl EDT {
                 solid_strings.push((solid_string_start, solid_string_end));
             }
 
+            // Helpers
+
+            let find_non_epsilon =
+                |col: usize, row: usize, data: &Vec<Vec<Item>>| -> Option<Coordinate> {
+                    // we get here if we have adj degenerate letters with epsilons
+                    // go back and find first non wildcard
+                    (0..col).rev().find_map(|col_index: usize| {
+                        if data[col_index].len() == 1 {
+                            // we get here if we have adj degenerate letters with completely empty variants
+                            Some([col_index, 0])
+                        } else if data[col_index][row].base() != WILDCARD {
+                            Some([col_index, row])
+                        } else {
+                            None
+                        }
+                    })
+                };
+
             // ------------
             // Update State
             // ------------
             // solid_strings
             if in_solid_letter() {
-                data[p] = vec![*c];
+                let mut item = Item::new(c);
+
+                if p > 0 {
+                    let prev_col_index: usize = p - 1;
+                    let prev_col_len = data[prev_col_index].len();
+
+                    let incoming: HashSet<Coordinate> = (0..prev_col_len)
+                        .filter_map(|row| {
+                            if data[prev_col_index][row].base() != WILDCARD {
+                                Some([prev_col_index, row])
+                            } else {
+                                find_non_epsilon(prev_col_index, row, &data)
+                            }
+                        })
+                        .collect();
+                    item.add_edges(incoming.clone(), Edge::Incoming);
+
+                    for [col, row] in incoming {
+                        // No need to check for wildcard as it was checked by incoming
+                        data[col][row].add_edge(p, 0, Edge::Outgoing);
+                    }
+                }
+
+                data[p] = vec![item];
                 set_lookup_index(c, p);
                 p += 1;
                 size += 1;
@@ -326,10 +419,32 @@ impl EDT {
                     // Case 2
                     (Some(Char::Open), Some(Char::Nucleotide)) => {
                         p_prime = p;
+                        let mut item = Item::new(c);
+
+                        if p > 0 {
+                            let prev_col_index: usize = p_prime - 1;
+                            let prev_col_len = data[prev_col_index].len();
+
+                            let incoming: HashSet<Coordinate> = (0..prev_col_len)
+                                .filter_map(|row| {
+                                    if data[prev_col_index][row].base() != WILDCARD {
+                                        Some([prev_col_index, row])
+                                    } else {
+                                        find_non_epsilon(prev_col_index, row), &data
+                                    }
+                                })
+                                .collect();
+                            item.add_edges(incoming.clone(), Edge::Incoming);
+
+                            for [col, row] in incoming {
+                                // No need to check for wildcard as it was checked by incoming
+                                data[col][row].add_edge(p_prime, 0, Edge::Outgoing);
+                            }
+                        }
 
                         match data.get_mut(p_prime) {
-                            Some(col) => col.push(*c),
-                            _ => data[p_prime] = vec![*c],
+                            Some(col) => col.push(item),
+                            _ => data[p_prime] = vec![item],
                         }
 
                         set_lookup_index(c, p_prime);
@@ -352,7 +467,7 @@ impl EDT {
                                 for row in 0..z_prime {
                                     match data[col].get(row) {
                                         None => {
-                                            data[col].push(WILDCARD);
+                                            data[col].push(Item::new(&WILDCARD));
                                             set_lookup_index(&b'*', col);
                                         }
                                         Some(_) => {}
@@ -375,9 +490,33 @@ impl EDT {
                     }
                     // Case 5
                     (_, Some(Char::Nucleotide)) => {
+                        let mut item = Item::new(c);
+
+                        if p > 0 {
+                            let prev_col_index: usize = p - 1;
+                            let prev_col_len = data[prev_col_index].len();
+
+                            let incoming: HashSet<Coordinate> = (0..prev_col_len)
+                                .filter_map(|row| {
+                                    if data[prev_col_index][row].base() != WILDCARD {
+                                        Some([prev_col_index, row])
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect();
+                            item.add_edges(incoming, Edge::Incoming);
+
+                            for prev_item in data.get_mut(prev_col_index).unwrap() {
+                                if prev_item.base() != WILDCARD {
+                                    prev_item.add_edge(p, 0, Edge::Outgoing);
+                                }
+                            }
+                        }
+
                         match data.get_mut(p_prime) {
-                            Some(col) => col.push(*c),
-                            _ => data[p_prime] = vec![*c],
+                            Some(col) => col.push(item),
+                            _ => data[p_prime] = vec![item],
                         }
                         set_lookup_index(c, p_prime);
                         p_prime += 1;
@@ -407,7 +546,6 @@ impl EDT {
 
         Self {
             data,
-            edges,
             z,
             p,
             size,
@@ -462,14 +600,19 @@ impl EDT {
         self.z
     }
 
-    pub fn from(&self, index: Coordinate) -> &HashSet<Coordinate> {
+    pub fn base_at(&self, index: Coordinate) -> u8 {
         let [col, row] = index;
-        self.edges[col][row].from()
+        self.data[col][row].base()
     }
 
-    pub fn to(&self, index: Coordinate) -> &HashSet<Coordinate> {
+    pub fn outgoing(&self, index: Coordinate) -> &HashSet<Coordinate> {
         let [col, row] = index;
-        self.edges[col][row].to()
+        &self.data[col][row].outgoing
+    }
+
+    pub fn incoming(&self, index: Coordinate) -> &HashSet<Coordinate> {
+        let [col, row] = index;
+        &self.data[col][row].incoming
     }
     /// Positions containing a given char
     /// Allowed in lookup A, T, C, G, or * as u8
@@ -489,13 +632,14 @@ impl EDT {
     pub fn get_solid_intervals(&self) -> &Vec<(usize, usize)> {
         &self.solid_strings
     }
+
     pub fn get_degenerate_letters(&self) -> &Vec<(usize, usize)> {
         &self.degenerate_letters
     }
 }
 
 impl Index<usize> for EDT {
-    type Output = Vec<u8>;
+    type Output = Vec<Item>;
 
     /// An index into the underlying vector
     ///
@@ -535,7 +679,7 @@ impl Display for EDT {
         for row in 0..rows {
             for col in 0..cols {
                 match self.data[col].get(row) {
-                    Some(r) => s.push(*r as char),
+                    Some(i) => s.push(i.base() as char),
                     _ => s.push(' '),
                 };
             }
@@ -698,22 +842,22 @@ mod tests {
             let edt = EDT::from_str(ed_string);
 
             let index = 2;
-            let positions: Vec<char> = edt[index].iter().map(|e| *e as char).collect();
+            let positions: Vec<char> = edt[index].iter().map(|e| e.base() as char).collect();
             assert_eq!(vec!['A', 'A', '*'], positions);
 
             let ed_string = "AT{TCC,C,}AA";
             let edt = EDT::from_str(ed_string);
 
             let index = 0;
-            let positions: Vec<char> = edt[index].iter().map(|e| *e as char).collect();
+            let positions: Vec<char> = edt[index].iter().map(|e| e.base() as char).collect();
             assert_eq!(positions, vec!['A']);
 
             let index = 4;
-            let positions: Vec<char> = edt[index].iter().map(|e| *e as char).collect();
+            let positions: Vec<char> = edt[index].iter().map(|e| e.base() as char).collect();
             assert_eq!(positions, vec!['C', '*', '*']);
 
             let index = edt.p() as usize - 1;
-            let positions: Vec<char> = edt[index].iter().map(|e| *e as char).collect();
+            let positions: Vec<char> = edt[index].iter().map(|e| e.base() as char).collect();
             assert_eq!(positions, vec!['A']);
         }
 
@@ -735,22 +879,34 @@ mod tests {
 
         #[test]
         fn test_incoming_edges() {
-            // degenerate
             let ed_string = "{CAT,C,}AT{TCC,C,}AA";
             let edt = EDT::from_str(ed_string);
 
-            let in_edges = HashSet::from([[5, 1], [8, 0], [9, 0]]);
-            assert_eq!(*edt.to([9, 0]), in_edges);
+            // eprintln!("{}", edt);
+            // eprintln!("{:?}", edt);
 
             // solid
-            let ed_string = "ATCGAAT{C,A}GAT{C,CATGC,,A}GA";
-            let edt = EDT::from_str(ed_string);
+            let in_edges = HashSet::from([[8, 0]]);
+            assert_eq!(*edt.incoming([9, 0]), in_edges);
 
-            let in_edges = HashSet::from([[7, 1], [8, 1]]);
-            assert_eq!(*edt.to([9, 0]), in_edges);
+            let in_edges = HashSet::from([[7, 0], [7, 1], [7, 2]]);
+            eprintln!("{:?}", edt[8]);
+            assert_eq!(*edt.incoming([8, 0]), in_edges);
+
+            let in_edges = HashSet::from([[4, 0]]);
+            assert_eq!(*edt.incoming([5, 0]), in_edges);
+
+            let in_edges = HashSet::from([[4, 0]]);
+            assert_eq!(*edt.incoming([5, 1]), in_edges);
+
+            let in_edges = HashSet::from([]);
+            assert_eq!(*edt.incoming([5, 2]), in_edges);
+
+            let in_edges = HashSet::from([[6, 0], [8, 1]]);
+            assert_eq!(*edt.incoming([7, 0]), in_edges);
 
             let in_edges = HashSet::from([[11, 1], [12, 1], [17, 0], [18, 0]]);
-            assert_eq!(*edt.to([19, 1]), in_edges);
+            assert_eq!(*edt.incoming([19, 1]), in_edges);
         }
 
         #[test]
@@ -758,17 +914,19 @@ mod tests {
             let ed_string = "{CAT,C,}AT{TCC,C,}AA";
             let edt = EDT::from_str(ed_string);
 
-            let out_edges = HashSet::from([[6, 1], [10, 1], [9, 0]]);
-            assert_eq!(*edt.from([4, 0]), out_edges);
+            // solid
+            let out_edges = HashSet::<Coordinate>::new();
+            assert_eq!(*edt.outgoing([9, 0]), out_edges);
 
-            let ed_string = "ATCGAAT{C,A}GAT{C,CATGC,,A}GA";
-            let edt = EDT::from_str(ed_string);
+            let out_edges = HashSet::from([[9, 0]]);
+            assert_eq!(*edt.outgoing([8, 0]), out_edges);
 
-            let out_edges = HashSet::from([[7, 0], [8, 1]]);
-            assert_eq!(*edt.from([6, 0]), out_edges);
+            // degenerate
+            let out_edges = HashSet::from([[7, 1], [8, 1]]);
+            assert_eq!(*edt.outgoing([9, 0]), out_edges);
 
-            let out_edges = HashSet::from([[12, 1], [13, 0], [18, 0], [19, 1]]);
-            assert_eq!(*edt.from([11, 0]), out_edges);
+            let out_edges = HashSet::from([[11, 1], [12, 1], [17, 0], [18, 0]]);
+            assert_eq!(*edt.outgoing([19, 1]), out_edges);
         }
     }
 
