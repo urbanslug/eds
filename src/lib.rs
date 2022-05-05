@@ -89,7 +89,7 @@ enum Char {
 
 /// 0 => from (incoming nodes)
 /// 1 => to (outgoing nodes)
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Edges(HashSet<Coordinate>, HashSet<Coordinate>);
 
 impl Edges {
@@ -115,7 +115,7 @@ impl Edges {
 pub struct EDT {
     pub data: Vec<Vec<u8>>,
 
-    pub edges: Edges,
+    pub edges: Vec<Vec<Edges>>,
 
     /// deepest z
     z: usize,
@@ -155,7 +155,7 @@ impl EDT {
         let col = Vec::<u8>::with_capacity(EXPECTED_ROWS);
         let mut data = vec![col; EXPECTED_COLS];
 
-        let mut edges = Edges::new();
+        let mut edges = Vec::<Vec<Edges>>::with_capacity(EXPECTED_COLS);
 
         // State variables
         let mut current_letter: Option<Letter> = None;
@@ -244,6 +244,22 @@ impl EDT {
                 }
 
                 _ => panic!("Malformed EDS {}", *c as char),
+            }
+
+            // -------------
+            // Space related
+            // -------------
+
+            // reallocate the data vector
+            if p >= data.len() - EXPECTED_COLS {
+                let col = Vec::<u8>::with_capacity(EXPECTED_ROWS);
+                let limit = p * 2;
+                let data_slice = vec![col; limit];
+                data.extend_from_slice(&data_slice);
+
+                let edge = Vec::<Edges>::new();
+                let edge_slice = vec![edge.clone(); limit];
+                edges.extend_from_slice(&edge_slice);
             }
 
             // ---------------------------------
@@ -383,9 +399,11 @@ impl EDT {
         }
 
         data.truncate(p);
+        edges.truncate(p);
         degenerate_letters.shrink_to_fit();
         solid_strings.shrink_to_fit();
         data.shrink_to_fit();
+        edges.shrink_to_fit();
 
         Self {
             data,
@@ -444,6 +462,15 @@ impl EDT {
         self.z
     }
 
+    pub fn from(&self, index: Coordinate) -> &HashSet<Coordinate> {
+        let [col, row] = index;
+        self.edges[col][row].from()
+    }
+
+    pub fn to(&self, index: Coordinate) -> &HashSet<Coordinate> {
+        let [col, row] = index;
+        self.edges[col][row].to()
+    }
     /// Positions containing a given char
     /// Allowed in lookup A, T, C, G, or * as u8
     pub fn get_start_indices(&self, c: u8) -> &HashSet<usize> {
@@ -658,43 +685,6 @@ mod tests {
         }
     }
 
-    mod dag_construction {
-
-        /*
-
-        use super::super::*;
-
-        #[ignore]
-        #[test]
-        fn test_edges() {
-            let ed_string = "{CAT,C,}AT{TCC,C,}AA";
-            let edt = EDT::from_str(ed_string);
-
-            let out_edges = HashSet::from([6, 10, 9]);
-            // dbg!(edt[5] as char, edt.edges);
-            assert_eq!(*edt.from(5), out_edges);
-
-            let in_edges = HashSet::from([5, 8, 9]);
-            // assert_eq!(*edt.to(10), in_edges);
-
-            let ed_string = "ATCGAAT{C,A}GAT{C,CATGC,,A}GA";
-            let edt = EDT::from_str(ed_string);
-
-            let out_edges = HashSet::from([7, 8]);
-            assert_eq!(*edt.from(6), out_edges);
-
-            let out_edges = HashSet::from([12, 13, 18, 19]);
-            assert_eq!(*edt.from(11), out_edges);
-
-            let in_edges = HashSet::from([7, 8]);
-            assert_eq!(*edt.to(9), in_edges);
-
-            let in_edges = HashSet::from([11, 12, 17, 18]);
-            assert_eq!(*edt.to(19), in_edges);
-        }
-         */
-    }
-
     // positions and offsets
     mod indexing {
         use super::super::*;
@@ -737,6 +727,48 @@ mod tests {
 
             let start_g = HashSet::new();
             assert_eq!(*edt.get_start_indices(b'G'), start_g);
+        }
+    }
+
+    mod dag {
+        use super::super::*;
+
+        #[test]
+        fn test_incoming_edges() {
+            // degenerate
+            let ed_string = "{CAT,C,}AT{TCC,C,}AA";
+            let edt = EDT::from_str(ed_string);
+
+            let in_edges = HashSet::from([[5, 1], [8, 0], [9, 0]]);
+            assert_eq!(*edt.to([9, 0]), in_edges);
+
+            // solid
+            let ed_string = "ATCGAAT{C,A}GAT{C,CATGC,,A}GA";
+            let edt = EDT::from_str(ed_string);
+
+            let in_edges = HashSet::from([[7, 1], [8, 1]]);
+            assert_eq!(*edt.to([9, 0]), in_edges);
+
+            let in_edges = HashSet::from([[11, 1], [12, 1], [17, 0], [18, 0]]);
+            assert_eq!(*edt.to([19, 1]), in_edges);
+        }
+
+        #[test]
+        fn test_outgoing_edges() {
+            let ed_string = "{CAT,C,}AT{TCC,C,}AA";
+            let edt = EDT::from_str(ed_string);
+
+            let out_edges = HashSet::from([[6, 1], [10, 1], [9, 0]]);
+            assert_eq!(*edt.from([4, 0]), out_edges);
+
+            let ed_string = "ATCGAAT{C,A}GAT{C,CATGC,,A}GA";
+            let edt = EDT::from_str(ed_string);
+
+            let out_edges = HashSet::from([[7, 0], [8, 1]]);
+            assert_eq!(*edt.from([6, 0]), out_edges);
+
+            let out_edges = HashSet::from([[12, 1], [13, 0], [18, 0], [19, 1]]);
+            assert_eq!(*edt.from([11, 0]), out_edges);
         }
     }
 
