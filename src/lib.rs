@@ -29,7 +29,14 @@ use std::ops::Index;
 const EXPECTED_COLS: usize = 50_000; // expect no seq to be over 3000 bases
 const EXPECTED_ROWS: usize = 5; // expect a max of 5 variations
 const WILDCARD: u8 = b'*';
+const A: u8 = b'A';
+const T: u8 = b'T';
+const C: u8 = b'C';
+const G: u8 = b'G';
 const PAD: bool = true;
+
+// TODO: if true it does not compute edges
+const ENABLE_EDGES: bool = true;
 
 /// A `[column, row]` index
 pub type Coordinate = [usize; 2];
@@ -185,8 +192,7 @@ impl EDT {
         let mut current_letter: Option<Letter> = None;
         let mut current_char: Option<Char> = None;
 
-        let mut prev_letter: Option<Letter> = None;
-        let mut prev_char: Option<Char> = None;
+        let mut prev_char: Option<Char>;
 
         let mut p = 0;
         let mut p_prime = 0;
@@ -201,7 +207,7 @@ impl EDT {
         let mut degenerate_letters = Vec::<(usize, usize)>::with_capacity(EXPECTED_COLS);
 
         let mut solid_string_start: usize = 0 as usize;
-        let mut solid_string_end: usize = 0;
+        let mut solid_string_end: usize;
 
         // A lookup for start indices of each nucleotide
         let mut start_indices = [
@@ -216,11 +222,11 @@ impl EDT {
         let mut set_lookup_index = |c: &u8, p: usize| {
             let mut lookup_index: usize = 0;
             match *c {
-                b'A' => {}
-                b'T' => lookup_index = 1,
-                b'C' => lookup_index = 2,
-                b'G' => lookup_index = 3,
-                b'*' => lookup_index = 4,
+                A => {}
+                T => lookup_index = 1,
+                C => lookup_index = 2,
+                G => lookup_index = 3,
+                WILDCARD => lookup_index = 4,
                 _ => panic!(),
             };
 
@@ -232,7 +238,6 @@ impl EDT {
             match c {
                 b'A' | b'T' | b'C' | b'G' => {
                     prev_char = current_char;
-                    prev_letter = current_letter;
 
                     current_char = Some(Char::Nucleotide);
                     if current_letter.is_none() {
@@ -248,7 +253,6 @@ impl EDT {
                 }
                 b'{' => {
                     prev_char = current_char;
-                    prev_letter = current_letter;
 
                     current_char = Some(Char::Open);
                     current_letter = Some(Letter::Degenerate);
@@ -256,7 +260,6 @@ impl EDT {
 
                 b'}' => {
                     prev_char = current_char;
-                    prev_letter = current_letter;
 
                     current_char = Some(Char::Close);
                     current_letter = Some(Letter::Solid);
@@ -338,6 +341,27 @@ impl EDT {
                     })
                 };
 
+            let compute_incoming_edges = |p: usize, data: &Vec<Vec<Item>>| -> HashSet<Coordinate> {
+                if p == 0 {
+                    return HashSet::<Coordinate>::new();
+                }
+
+                let prev_col_index: usize = p - 1;
+                let prev_col_len = data[prev_col_index].len();
+
+                let incoming: HashSet<Coordinate> = (0..prev_col_len)
+                    .filter_map(|row| {
+                        if data[prev_col_index][row].base() != WILDCARD {
+                            Some([prev_col_index, row])
+                        } else {
+                            find_non_epsilon(prev_col_index, row, &data)
+                        }
+                    })
+                    .collect();
+
+                incoming
+            };
+
             // ------------
             // Update State
             // ------------
@@ -345,27 +369,14 @@ impl EDT {
             if in_solid_letter() {
                 let mut item = Item::new(c);
 
-                if p > 0 {
-                    let prev_col_index: usize = p - 1;
-                    let prev_col_len = data[prev_col_index].len();
-
-                    let incoming: HashSet<Coordinate> = (0..prev_col_len)
-                        .filter_map(|row| {
-                            if data[prev_col_index][row].base() != WILDCARD {
-                                Some([prev_col_index, row])
-                            } else {
-                                find_non_epsilon(prev_col_index, row, &data)
-                            }
-                        })
-                        .collect();
+                if ENABLE_EDGES {
+                    let incoming: HashSet<Coordinate> = compute_incoming_edges(p, &data);
                     item.add_edges(incoming.clone(), Edge::Incoming);
-
                     for [col, row] in incoming {
                         // No need to check for wildcard as it was checked by incoming
                         data[col][row].add_edge(p, 0, Edge::Outgoing);
                     }
                 }
-
                 data[p] = vec![item];
                 set_lookup_index(c, p);
                 p += 1;
@@ -390,21 +401,10 @@ impl EDT {
                         p_prime = p;
                         let mut item = Item::new(c);
 
-                        if p_prime > 0 {
-                            let prev_col_index: usize = p_prime - 1;
-                            let prev_col_len = data[prev_col_index].len();
-
-                            let incoming: HashSet<Coordinate> = (0..prev_col_len)
-                                .filter_map(|row| {
-                                    if data[prev_col_index][row].base() != WILDCARD {
-                                        Some([prev_col_index, row])
-                                    } else {
-                                        find_non_epsilon(prev_col_index, row, &data)
-                                    }
-                                })
-                                .collect();
+                        if ENABLE_EDGES {
+                            let incoming: HashSet<Coordinate> =
+                                compute_incoming_edges(p_prime, &data);
                             item.add_edges(incoming.clone(), Edge::Incoming);
-
                             for [col, row] in incoming {
                                 // No need to check for wildcard as it was checked by incoming
                                 data[col][row].add_edge(p_prime, z_prime, Edge::Outgoing);
@@ -438,7 +438,7 @@ impl EDT {
                                     match data[col].get(row) {
                                         None => {
                                             data[col].push(Item::new(&WILDCARD));
-                                            set_lookup_index(&b'*', col);
+                                            set_lookup_index(&WILDCARD, col);
                                         }
                                         Some(_) => {}
                                     };
@@ -462,19 +462,9 @@ impl EDT {
                     (_, Some(Char::Nucleotide)) => {
                         let mut item = Item::new(c);
 
-                        if p_prime > 0 {
-                            let prev_col_index: usize = p_prime - 1;
-                            let prev_col_len = data[prev_col_index].len();
-
-                            let incoming: HashSet<Coordinate> = (0..prev_col_len)
-                                .filter_map(|row| {
-                                    if data[prev_col_index][row].base() != WILDCARD {
-                                        Some([prev_col_index, row])
-                                    } else {
-                                        find_non_epsilon(prev_col_index, row, &data)
-                                    }
-                                })
-                                .collect();
+                        if ENABLE_EDGES {
+                            let incoming: HashSet<Coordinate> =
+                                compute_incoming_edges(p_prime, &data);
                             item.add_edges(incoming.clone(), Edge::Incoming);
                             for [col, row] in incoming {
                                 // No need to check for wildcard as it was checked by incoming
@@ -587,10 +577,11 @@ impl EDT {
     pub fn get_start_indices(&self, c: u8) -> &HashSet<usize> {
         let mut lookup_index: usize = 0;
         match c {
-            b'A' => {}
-            b'T' => lookup_index = 1,
-            b'C' => lookup_index = 2,
-            b'G' => lookup_index = 3,
+            A => {}
+            T => lookup_index = 1,
+            C => lookup_index = 2,
+            G => lookup_index = 3,
+            WILDCARD => lookup_index = 3,
             _ => panic!("EDT::get_start_indices expects A, T, C or G. Got {c}"),
         };
 
@@ -835,10 +826,10 @@ mod tests {
             let edt = EDT::from_str(ed_string);
 
             let start_a = HashSet::from([0, 6, 5]);
-            assert_eq!(*edt.get_start_indices(b'A'), start_a);
+            assert_eq!(*edt.get_start_indices(A), start_a);
 
             let start_g = HashSet::new();
-            assert_eq!(*edt.get_start_indices(b'G'), start_g);
+            assert_eq!(*edt.get_start_indices(G), start_g);
         }
     }
 
@@ -850,25 +841,27 @@ mod tests {
             let ed_string = "{CAT,C,}AT{TCC,C,}AA";
             let edt = EDT::from_str(ed_string);
 
-            // solid
-            let in_edges = HashSet::from([[8, 0]]);
-            assert_eq!(*edt.incoming([9, 0]), in_edges);
+            if ENABLE_EDGES {
+                // solid
+                let in_edges = HashSet::from([[8, 0]]);
+                assert_eq!(*edt.incoming([9, 0]), in_edges);
 
-            let in_edges = HashSet::from([[7, 0], [5, 1], [4, 0]]);
-            assert_eq!(*edt.incoming([8, 0]), in_edges);
+                let in_edges = HashSet::from([[7, 0], [5, 1], [4, 0]]);
+                assert_eq!(*edt.incoming([8, 0]), in_edges);
 
-            let in_edges = HashSet::from([[4, 0]]);
-            assert_eq!(*edt.incoming([5, 0]), in_edges);
+                let in_edges = HashSet::from([[4, 0]]);
+                assert_eq!(*edt.incoming([5, 0]), in_edges);
 
-            // degenerate
-            let in_edges = HashSet::from([[4, 0]]);
-            assert_eq!(*edt.incoming([5, 1]), in_edges);
+                // degenerate
+                let in_edges = HashSet::from([[4, 0]]);
+                assert_eq!(*edt.incoming([5, 1]), in_edges);
 
-            let in_edges = HashSet::from([]);
-            assert_eq!(*edt.incoming([5, 2]), in_edges);
+                let in_edges = HashSet::from([]);
+                assert_eq!(*edt.incoming([5, 2]), in_edges);
 
-            let in_edges = HashSet::from([[6, 0]]);
-            assert_eq!(*edt.incoming([7, 0]), in_edges);
+                let in_edges = HashSet::from([[6, 0]]);
+                assert_eq!(*edt.incoming([7, 0]), in_edges);
+            }
         }
 
         #[test]
@@ -876,19 +869,21 @@ mod tests {
             let ed_string = "{CAT,C,}AT{TCC,C,}AA";
             let edt = EDT::from_str(ed_string);
 
-            // solid
-            let out_edges = HashSet::<Coordinate>::new();
-            assert_eq!(*edt.outgoing([9, 0]), out_edges);
+            if ENABLE_EDGES {
+                // solid
+                let out_edges = HashSet::<Coordinate>::new();
+                assert_eq!(*edt.outgoing([9, 0]), out_edges);
 
-            let out_edges = HashSet::from([[9, 0]]);
-            assert_eq!(*edt.outgoing([8, 0]), out_edges);
+                let out_edges = HashSet::from([[9, 0]]);
+                assert_eq!(*edt.outgoing([8, 0]), out_edges);
 
-            // degenerate
-            let out_edges = HashSet::from([[3, 0]]);
-            assert_eq!(*edt.outgoing([0, 1]), out_edges);
+                // degenerate
+                let out_edges = HashSet::from([[3, 0]]);
+                assert_eq!(*edt.outgoing([0, 1]), out_edges);
 
-            let out_edges = HashSet::from([[8, 0]]);
-            assert_eq!(*edt.outgoing([5, 1]), out_edges);
+                let out_edges = HashSet::from([[8, 0]]);
+                assert_eq!(*edt.outgoing([5, 1]), out_edges);
+            }
         }
     }
 }
