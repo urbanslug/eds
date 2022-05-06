@@ -124,7 +124,7 @@ impl Item {
         }
     }
 
-    fn base(&self) -> u8 {
+    pub fn base(&self) -> u8 {
         self.base
     }
 }
