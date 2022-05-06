@@ -129,6 +129,72 @@ impl Item {
     }
 }
 
+pub struct DT {
+    pub data: Vec<Vec<u8>>,
+    z: usize,
+    // p: usize,
+}
+
+impl DT {
+    pub fn p(&self) -> usize {
+        self.data.len()
+    }
+
+    pub fn z(&self) -> usize {
+        self.z
+    }
+}
+
+impl Index<usize> for DT {
+    type Output = Vec<u8>;
+
+    /// An index into the underlying vector
+    ///
+    /// ```text
+    /// AT{T,C}AA
+    /// ```
+    /// as
+    ///
+    /// ```text
+    /// 01234
+    /// ATTAA
+    ///   C
+    /// ```
+
+    fn index(&self, idx: usize) -> &Self::Output {
+        &self.data[idx]
+    }
+}
+
+impl Display for DT {
+    /// prints
+    /// ```text
+    /// A{CAT,GAG}AT{TCC,CAA}AA
+    /// ```
+    /// as
+    /// ```text
+    /// ACATATTCCAA
+    ///  GAG  CAA
+    /// ```
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let cols = self.p();
+        let rows = self.z();
+
+        let mut s = String::new();
+        for row in 0..rows {
+            for col in 0..cols {
+                match self.data[col].get(row) {
+                    Some(i) => s.push(*i as char),
+                    _ => s.push(' '),
+                };
+            }
+            s.push('\n');
+        }
+
+        write!(f, "{}", s)
+    }
+}
+
 /// The underlying Elastic Degenerate Text
 /// Can be thought of as a matrix
 #[derive(Debug)]
@@ -608,6 +674,29 @@ impl EDT {
 
     pub fn get_degenerate_letters(&self) -> &Vec<(usize, usize)> {
         &self.degenerate_letters
+    }
+
+    pub fn extract_inelastic(&self) -> DT {
+        let diagonal = self.p();
+        let mut z = 0;
+        let mut degenerate_matrix: Vec<Vec<u8>> = Vec::with_capacity(diagonal);
+
+        for index in 0..diagonal {
+            let col: &Vec<Item> = &self[index];
+            let bases_in_col: Vec<u8> = col.iter().map(|item: &Item| item.base()).collect();
+            if !bases_in_col.iter().copied().any(|c: u8| c == WILDCARD) {
+                let z_prime = bases_in_col.len();
+                if z_prime > z {
+                    z = z_prime;
+                }
+                degenerate_matrix.push(bases_in_col);
+            }
+        }
+
+        DT {
+            data: degenerate_matrix,
+            z,
+        }
     }
 }
 
