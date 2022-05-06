@@ -62,30 +62,6 @@ enum Char {
     Close,
 }
 
-/// 0 => from (incoming nodes)
-/// 1 => to (outgoing nodes)
-#[derive(Debug, Clone)]
-pub struct Edges(HashSet<Coordinate>, HashSet<Coordinate>);
-
-impl Edges {
-    #[allow(dead_code)]
-    fn new() -> Self {
-        Edges(HashSet::<Coordinate>::new(), HashSet::<Coordinate>::new())
-    }
-
-    // outgoing edges
-    #[allow(dead_code)]
-    fn from(&self) -> &HashSet<Coordinate> {
-        &self.1
-    }
-
-    // incoming edges
-    #[allow(dead_code)]
-    fn to(&self) -> &HashSet<Coordinate> {
-        &self.0
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct Item {
     base: u8,
@@ -185,8 +161,6 @@ impl EDT {
     pub fn from_u8_slice(eds: &[u8]) -> Self {
         let col = Vec::<Item>::with_capacity(EXPECTED_ROWS);
         let mut data = vec![col; EXPECTED_COLS];
-
-        let mut edges = Vec::<Vec<Edges>>::with_capacity(EXPECTED_COLS);
 
         // State variables
         let mut current_letter: Option<Letter> = None;
@@ -371,10 +345,19 @@ impl EDT {
 
                 if ENABLE_EDGES {
                     let incoming: HashSet<Coordinate> = compute_incoming_edges(p, &data);
-                    item.add_edges(incoming.clone(), Edge::Incoming);
+                    item.add_edges(incoming.clone(), Edge::Incoming)
+                        .expect(&format!(
+                            "Failed in solid_string to add incoming edges p={} s={}",
+                            p, size
+                        ));
                     for [col, row] in incoming {
                         // No need to check for wildcard as it was checked by incoming
-                        data[col][row].add_edge(p, 0, Edge::Outgoing);
+                        data[col][row]
+                            .add_edge(p, 0, Edge::Outgoing)
+                            .expect(&format!(
+                                "Failed in solid_string to add outgoing edges p={} s={}",
+                                p, size
+                            ));
                     }
                 }
                 data[p] = vec![item];
@@ -404,10 +387,19 @@ impl EDT {
                         if ENABLE_EDGES {
                             let incoming: HashSet<Coordinate> =
                                 compute_incoming_edges(p_prime, &data);
-                            item.add_edges(incoming.clone(), Edge::Incoming);
+                            item.add_edges(incoming.clone(), Edge::Incoming)
+                                .expect(&format!(
+                                    "Failed case 2 to add incoming edges p={} s={}",
+                                    p_prime, size
+                                ));
                             for [col, row] in incoming {
                                 // No need to check for wildcard as it was checked by incoming
-                                data[col][row].add_edge(p_prime, z_prime, Edge::Outgoing);
+                                data[col][row]
+                                    .add_edge(p_prime, z_prime, Edge::Outgoing)
+                                    .expect(&format!(
+                                        "Failed case 2 to add outgoing edges p={} s={}",
+                                        p_prime, size
+                                    ));
                             }
                         }
 
@@ -465,10 +457,20 @@ impl EDT {
                         if ENABLE_EDGES {
                             let incoming: HashSet<Coordinate> =
                                 compute_incoming_edges(p_prime, &data);
-                            item.add_edges(incoming.clone(), Edge::Incoming);
+                            item.add_edges(incoming.clone(), Edge::Incoming)
+                                .expect(&format!(
+                                    "Failed case 5 to add incoming edges p={} s={}",
+                                    p_prime, size
+                                ));
+
                             for [col, row] in incoming {
                                 // No need to check for wildcard as it was checked by incoming
-                                data[col][row].add_edge(p_prime, z_prime, Edge::Outgoing);
+                                data[col][row]
+                                    .add_edge(p_prime, z_prime, Edge::Outgoing)
+                                    .expect(&format!(
+                                        "Failed case 5 to add outgoing edges p={} s={}",
+                                        p_prime, size
+                                    ));
                             }
                         }
 
@@ -496,11 +498,9 @@ impl EDT {
         }
 
         data.truncate(p);
-        edges.truncate(p);
         degenerate_letters.shrink_to_fit();
         solid_strings.shrink_to_fit();
         data.shrink_to_fit();
-        edges.shrink_to_fit();
 
         Self {
             data,
