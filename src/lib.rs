@@ -24,23 +24,28 @@ use std::ops::Index;
 // ---------
 // Constants
 // ----------
+
 // Minimum number of chars it can hold without re-allocating
-// assume small viral pan-genome (50k)
-const EXPECTED_COLS: usize = 50_000; // expect no seq to be over 3000 bases
+// expect an EDT to have a diameter of 50_000 bases
+const EXPECTED_COLS: usize = 50_000;
 const EXPECTED_ROWS: usize = 5; // expect a max of 5 variations
-const WILDCARD: u8 = b'*';
+const WILDCARD: u8 = b'*'; // epsilons
 const A: u8 = b'A';
 const T: u8 = b'T';
 const C: u8 = b'C';
 const G: u8 = b'G';
-const PAD: bool = true;
-
-// TODO: if true it does not compute edges
+const PAD: bool = true; // pad the EDT with epsilons
 const ENABLE_EDGES: bool = true;
 
+// -------
+// Aliases
+// -------
 /// A `[column, row]` index
 pub type Coordinate = [usize; 2];
 
+// ------------
+// Helper types
+// ------------
 /// A letter in the EDT. It can either be degenerate or solid
 #[derive(Debug, PartialEq, Copy, Clone)]
 enum Letter {
@@ -62,16 +67,21 @@ enum Char {
     Close,
 }
 
+pub enum Edge {
+    Incoming,
+    Outgoing,
+}
+
+// ----------
+// Main types
+// ----------
+
+/// Contents of an EDT matrix cell
 #[derive(Debug, Clone)]
 pub struct Item {
     base: u8,
     incoming: HashSet<Coordinate>,
     outgoing: HashSet<Coordinate>,
-}
-
-pub enum Edge {
-    Incoming,
-    Outgoing,
 }
 
 impl Item {
@@ -120,8 +130,10 @@ impl Item {
 }
 
 /// The underlying Elastic Degenerate Text
+/// Can be thought of as a matrix
 #[derive(Debug)]
 pub struct EDT {
+    /// the underlying matrix that holds the EDT
     data: Vec<Vec<Item>>,
 
     /// deepest z
@@ -142,7 +154,9 @@ pub struct EDT {
     /// A = 0 T = 1 C = 2 G = 3
     start_indices: [HashSet<usize>; 5],
 
+    /// Intervals of solid strings
     solid_strings: Vec<(usize, usize)>,
+    /// Intervals of degenerate letters
     degenerate_letters: Vec<(usize, usize)>,
 }
 
