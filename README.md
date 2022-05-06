@@ -29,7 +29,7 @@ Degenerate letters are between brackets.
 Individual seeds are separated by commas.
 
 Generate EDS from fasta file and VCF
-https://github.com/webmasterar/edso
+https://github.com/urbanslug/aedso
 
 Generate random EDS
 https://github.com/webmasterar/EDSRand
