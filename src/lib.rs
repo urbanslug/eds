@@ -29,6 +29,7 @@ use std::ops::Index;
 // expect an EDT to have a diameter of 50_000 bases
 const EXPECTED_COLS: usize = 50_000;
 const EXPECTED_ROWS: usize = 5; // expect a max of 5 variations
+/// epsilon
 pub const WILDCARD: u8 = b'*'; // epsilons
 const A: u8 = b'A';
 const T: u8 = b'T';
@@ -76,7 +77,7 @@ pub enum Edge {
 // Main types
 // ----------
 
-/// Contents of an EDT matrix cell
+/// Contents of an [EDT](self::EDT) matrix cell
 #[derive(Debug, Clone)]
 pub struct Item {
     base: u8,
@@ -129,6 +130,7 @@ impl Item {
     }
 }
 
+/// Degenerate Text
 pub struct DT {
     pub data: Vec<Vec<u8>>,
     z: usize,
@@ -195,6 +197,8 @@ impl Display for DT {
     }
 }
 
+/// Elastic Degenerate Text
+///
 /// The underlying Elastic Degenerate Text
 /// Can be thought of as a matrix
 #[derive(Debug)]
