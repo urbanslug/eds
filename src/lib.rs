@@ -74,6 +74,14 @@ pub enum Edge {
 }
 
 // ----------
+// Traits
+// ----------
+
+pub trait Sequence {
+    fn to_msa(&self) {}
+}
+
+// ----------
 // Main types
 // ----------
 
@@ -134,7 +142,6 @@ impl Item {
 pub struct DT {
     pub data: Vec<Vec<u8>>,
     z: usize,
-    // p: usize,
 }
 
 impl DT {
@@ -194,6 +201,30 @@ impl Display for DT {
         }
 
         write!(f, "{}", s)
+    }
+}
+
+impl Sequence for DT {
+    fn to_msa(&self) {
+        let rows = self.z;
+        let cols = self.data.len();
+
+        // let mut s = String::new();
+        for (index, row) in (0..rows).enumerate() {
+            println!(">{}", index);
+            for col in 0..cols {
+                match self.data[col].get(row) {
+                    Some(i) => {
+                        print!("{}", *i as char)
+                    }
+                    _ => {
+                        print!("{}", *self.data[col].get(0).unwrap() as char)
+                    }
+                };
+            }
+
+            println!();
+        }
     }
 }
 
@@ -656,6 +687,7 @@ impl EDT {
         let [col, row] = index;
         &self.data[col][row].incoming
     }
+
     /// Positions containing a given char
     /// Allowed in lookup A, T, C, G, or * as u8
     pub fn get_start_indices(&self, c: u8) -> &HashSet<usize> {
@@ -701,6 +733,37 @@ impl EDT {
             data: degenerate_matrix,
             z,
         }
+    }
+}
+
+impl Sequence for EDT {
+    fn to_msa(&self) {
+        let rows = self.z;
+        let cols = self.p;
+
+        // let mut s = String::new();
+        for (index, row) in (0..rows).enumerate() {
+            println!(">{}", index);
+            for col in 0..cols {
+                match self.data[col].get(row) {
+                    Some(i) => {
+                        let c = if WILDCARD == i.base() {
+                            '-'
+                        } else {
+                            i.base() as char
+                        };
+                        print!("{}", c)
+                    }
+                    _ => {
+                        print!("{}", self.data[col].get(0).unwrap().base() as char)
+                    }
+                };
+            }
+
+            println!();
+        }
+
+        // write!(f, "{}", s)
     }
 }
 
@@ -772,6 +835,7 @@ mod tests {
 
             let ed_string = "TGAT{T,C}CCTA{T,G}{T,A}{A,T}A{T,A}GG";
             let edt = EDT::from_str(ed_string);
+
             assert_eq!(
                 *edt.get_degenerate_letters(),
                 Vec::from([(4, 5), (9, 10), (10, 11), (11, 12), (13, 14)])
@@ -785,6 +849,7 @@ mod tests {
                              AACTT{TGTA,GGTA,C}AACTT{T, ,G}AG\t\
                              AG{G,T}CCGGTTTATATTGAT{T,C}CCTA";
             let edt = EDT::from_str(ed_string);
+
             assert_eq!(
                 *edt.get_degenerate_letters(),
                 Vec::from([(9, 10), (15, 19), (24, 25), (29, 30), (45, 46)])
@@ -991,6 +1056,19 @@ mod tests {
                 let out_edges = HashSet::from([[8, 0]]);
                 assert_eq!(*edt.outgoing([5, 1]), out_edges);
             }
+        }
+    }
+
+    mod dt {
+        use super::super::*;
+        #[test]
+        fn test_foo() {
+            let ed_string = "A{T,G}{C,A}{T,A}TC";
+            let edt = EDT::from_str(ed_string);
+
+            let dt = edt.extract_inelastic();
+
+            dt.to_msa();
         }
     }
 }
