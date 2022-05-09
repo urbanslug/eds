@@ -29,7 +29,7 @@ use std::ops::Index;
 // expect an EDT to have a diameter of 50_000 bases
 const EXPECTED_COLS: usize = 50_000;
 const EXPECTED_ROWS: usize = 5; // expect a max of 5 variations
-const WILDCARD: u8 = b'*'; // epsilons
+pub const WILDCARD: u8 = b'*'; // epsilons
 const A: u8 = b'A';
 const T: u8 = b'T';
 const C: u8 = b'C';
