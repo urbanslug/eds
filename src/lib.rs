@@ -141,7 +141,7 @@ impl Item {
 /// Degenerate Text
 pub struct DT {
     pub data: Vec<Vec<u8>>,
-    z: usize,
+    pub z: usize,
 }
 
 impl DT {
