@@ -142,6 +142,7 @@ impl Item {
 pub struct DT {
     pub data: Vec<Vec<u8>>,
     pub z: usize,
+    pub size: usize, // N
 }
 
 impl DT {
@@ -151,6 +152,10 @@ impl DT {
 
     pub fn z(&self) -> usize {
         self.z
+    }
+
+    pub fn size(&self) -> usize {
+        self.size
     }
 }
 
@@ -715,6 +720,7 @@ impl EDT {
     pub fn extract_inelastic(&self) -> DT {
         let diagonal = self.p();
         let mut z = 0;
+        let mut size: usize = 0;
         let mut degenerate_matrix: Vec<Vec<u8>> = Vec::with_capacity(diagonal);
 
         for index in 0..diagonal {
@@ -725,6 +731,7 @@ impl EDT {
                 if z_prime > z {
                     z = z_prime;
                 }
+                size += z_prime;
                 degenerate_matrix.push(bases_in_col);
             }
         }
@@ -732,6 +739,7 @@ impl EDT {
         DT {
             data: degenerate_matrix,
             z,
+            size,
         }
     }
 }
