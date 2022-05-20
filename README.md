@@ -32,5 +32,6 @@ ATCGATGGG{T,C}AACTT{T,G}AG{G,T}CCGGTTTATATTGAT{T,C}CCTA{T,G}{T,A}{A,T}A{T,A}GGGG
 
 ## Tooling
 
-- Generate EDS from fasta file and VCF https://github.com/urbanslug/aedso
-- Generate random EDS https://github.com/urbanslug/simed
+- Generate Elastic Degenerate Text from fasta file and VCF https://github.com/urbanslug/aedso
+- Generate random Degenerate Text https://github.com/urbanslug/simed
+- Generate random Elastic Degenerate Text https://github.com/webmasterar/EDSRand
