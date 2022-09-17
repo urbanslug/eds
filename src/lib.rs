@@ -1,18 +1,26 @@
 /*!
 # EDS
 
-EDT parser
+A parser for Elastic Degenerate Strings and Denerate Strings.
 
-Degenerate letters are between brackets.
+Degenerate letters are between curly brackets {}.
 Individual seeds are separated by commas.
-Empty seeds are allowed
-`AT{TCC,AG,C,}AA`
+Empty seeds are allowed and represented by the lack of a seed
+for example:  `AT{TCC,AG,C,}AA` or  `AT{TCC,,AG,C}AA`.
 
-Generate EDS from fasta file and VCF
-[https://github.com/urbanslug/aedso]()
+From real data:
+ - Generate EDS from fasta file and VCF
+   [https://github.com/urbanslug/aedso]()
 
-Generate random EDS
-[https://github.com/webmasterar/EDSRand]()
+Simulation:
+
+ - Generate random EDS
+   [https://github.com/webmasterar/EDSRand]()
+
+ - Simulate a degenerate string
+   [https://github.com/urbanslug/simed]()
+
+
 
  */
 
@@ -49,7 +57,7 @@ pub type Coordinate = [usize; 2];
 // ------------
 /// A letter in the EDT. It can either be degenerate or solid
 #[derive(Debug, PartialEq, Copy, Clone)]
-enum Letter {
+pub enum Letter {
     Solid,
     Degenerate,
 }
@@ -68,6 +76,8 @@ enum Char {
     Close,
 }
 
+
+/// A directed edge. Used to connect nodes in the EDT.
 pub enum Edge {
     Incoming,
     Outgoing,
@@ -78,6 +88,7 @@ pub enum Edge {
 // ----------
 
 pub trait Sequence {
+    /// Generate a Multiple Sequence Alignment
     fn to_msa(&self) {}
 }
 
@@ -245,7 +256,9 @@ pub struct EDT {
     /// deepest z
     z: usize,
 
+    /// W
     /// diameter of the graph or length of longest string in the possibility set
+    /// Also the width (w) of the EDT
     p: usize,
 
     /// size (N)
@@ -660,21 +673,35 @@ impl EDT {
         )
     }
 
+    /// N:
+    /// Sum of non-empty characters is the EDT
     pub fn size(&self) -> usize {
         self.size
     }
 
+    /// n:
+    /// Sum of sets of strings in the EDT
     pub fn length(&self) -> usize {
         self.length
     }
 
     // should this be renamed diameter?
-    pub fn p(&self) -> usize {
+    /// W:
+    /// The diameter of the EDT when seen as a DAG
+    pub fn w(&self) -> usize {
         self.p
     }
 
-    // should this be renamed diameter?
-    pub fn z(&self) -> usize {
+    /// h
+    /// The size of the set at that column
+    /// column is an index within w
+    /// same as `edt[idx].len()`
+    pub fn h(&self, col: usize) -> usize {
+        self.data[col].len()
+    }
+
+    /// max h in the EDT
+    pub fn max_h(&self) -> usize {
         self.z
     }
 
@@ -718,7 +745,7 @@ impl EDT {
     }
 
     pub fn extract_inelastic(&self) -> DT {
-        let diagonal = self.p();
+        let diagonal = self.w();
         let mut z = 0;
         let mut size: usize = 0;
         let mut degenerate_matrix: Vec<Vec<u8>> = Vec::with_capacity(diagonal);
@@ -995,7 +1022,7 @@ mod tests {
             let positions: Vec<char> = edt[index].iter().map(|e| e.base() as char).collect();
             assert_eq!(positions, vec!['C', '*', '*']);
 
-            let index = edt.p() as usize - 1;
+            let index = edt.w() as usize - 1;
             let positions: Vec<char> = edt[index].iter().map(|e| e.base() as char).collect();
             assert_eq!(positions, vec!['A']);
         }

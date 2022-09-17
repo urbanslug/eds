@@ -1,5 +1,5 @@
 # EDS
-EDS parser
+Automata based Degenerate String and Elastic Degenerate String parser
 
 
 ## Documentation
